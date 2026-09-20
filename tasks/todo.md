@@ -4,8 +4,9 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P8 (not started). P0–P7 complete — the whole backend plus the React-free
-frontend networking layer; 272 passing tests. See § Review.
+**Current phase:** P9 (not started). P0–P8 complete — the whole backend, the React-free frontend
+networking layer, and the per-symbol order-book synchroniser; 291 passing tests. All three
+invariants now have passing tests on both sides of the wire. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -105,11 +106,11 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P8 — Order-book synchroniser
 
-- [ ] buffer-then-snapshot, 9 steps
-- [ ] one synchroniser instance per symbol
-- [ ] gap → `RESYNCING` for that symbol only, previous book stays visible and marked
-- [ ] `bookStatus` states
-- [ ] **Gate:** T2 + T4 pass; a gap in one symbol leaves the others `SYNCHRONIZED`
+- [x] buffer-then-snapshot, 9 steps
+- [x] one synchroniser instance per symbol
+- [x] gap → `RESYNCING` for that symbol only, previous book stays visible and marked
+- [x] `bookStatus` states
+- [x] **Gate:** T2 + T4 pass; a gap in one symbol leaves the others `SYNCHRONIZED`
 
 ## P9 — Chart
 
@@ -534,3 +535,46 @@ timers, which is exactly what T5, T6 and T7 will need.
 - `markSynchronized()` / `markSyncing()` are the seam the P8 synchronisers drive.
 - Visibility handling (`docs/04 §12`) needs the DOM and lands with the React layer in P10/P11;
   `sendPing()` is already public for the immediate probe on wake.
+
+### P8 — Order-book synchroniser (complete)
+
+**What changed.** `apps/web/features/market/orderbook/`: `order-book-model.ts` (the local mirror,
+`bigint` fixed-point, cumulative depth) and `synchronizer.ts` (`OrderBookSynchronizer` plus an
+`OrderBookRegistry` that holds one per symbol).
+
+**Verified.** 291 tests green (58 protocol, 177 api, 56 web), `lint`/`typecheck`/`build` clean.
+
+**T2** — the documented worked example runs literally: buffer `98, 99, 101, 102, 103`, snapshot at
+`100`, discard `98`/`99`, apply the rest, land at `103`. Then the T2 gap case: local at `102`, a
+delta claiming `previousSequence 104` → `resync-required`, `RESYNCING`, sequence untouched at `102`,
+book still on screen. The extra cases are covered too: duplicate delta, out-of-order arrival, a hole
+inside the buffer, quantity `0` deleting a level, an empty snapshot, a foreign symbol, a superseded
+snapshot, and cumulative depth from the touch outward.
+
+**T4** — five fast-check properties over generated books and delta chains:
+- Any contiguous chain applied in order reproduces the authoritative book exactly.
+- So does the same chain buffered first, delivered **reversed**, with duplicates mixed in.
+- Deltas at or below the snapshot sequence are discarded, never replayed.
+- A gap **always** resynchronises: the delta after a hole is refused, and the local sequence is left
+  exactly where it was rather than half-patched.
+- A fresh snapshot recovers cleanly from any gap.
+
+**Per-symbol isolation** is asserted directly: three symbols synchronised, a gap injected into
+`ETH-USD` only, and `BTC-USD` / `SOL-USD` stay `SYNCHRONIZED` and keep applying deltas through it.
+
+**A defect the property test found.** The live path already ignored duplicate deltas, but the
+buffer-drain path did not — a redelivered delta inside the buffer was mistaken for a hole and forced
+a spurious resync. fast-check shrank it to a one-batch, one-duplicate counterexample on the first
+run. The drain now applies the same duplicate rule as the live path.
+
+**Design decisions worth knowing.**
+- **Buffering starts before the snapshot is requested**, and `beginSync()` returns a **generation**
+  the caller hands back with the snapshot. A snapshot from a superseded attempt is dropped rather
+  than merged — the same guard the symbol-switch race needs in P9.
+- **The previous book stays visible through a resync.** `beginSync()` reports `RESYNCING` rather
+  than `SYNCING` when a book is already on screen, so the UI can mark it without blanking.
+- The buffer is bounded (2,000 deltas) so a stuck snapshot fetch cannot grow it without limit.
+- The registry routes each delta to its own symbol's synchroniser and nowhere else; `route()`
+  returns `ignored-symbol` for a symbol nothing is tracking.
+
+**Still open.** Nothing. P9 wires this into the chart and the symbol-switch race.
