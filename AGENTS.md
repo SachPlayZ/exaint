@@ -109,6 +109,10 @@ Each row is a real failure mode. Left column = instant reject in review.
 | Interval or symbol switch without request cancellation | Query key includes both + `AbortSignal` + response validation + generation id | [04](./docs/04-frontend.md#7-interval-switching) |
 | Clearing the screen when disconnected | Keep last known data visible, mark it `STALE` with an age | [04](./docs/04-frontend.md#11-disconnect-and-reconnect) |
 | Proxying the WebSocket through Next.js | Browser connects directly to `wss://api.…/v1/ws` | [00](./docs/00-architecture.md#5-deployment-topology) |
+| A chart library that fetches or streams its own data | Library renders what we hand it; we own fetching, interval switching, candle formation, late responses | [04](./docs/04-frontend.md#9-chart-adapter) |
+| A timer, listener, or socket created without its cancellation | Teardown table — cancellation written in the same commit | [04](./docs/04-frontend.md#14-resource-teardown) |
+| Treating empty history as an error | `[]` is a valid state: empty chart, no crash, no error toast | [04](./docs/04-frontend.md#empty-and-degenerate-history) |
+| Desktop-only layout | Responsive is a requirement — three breakpoints, ≥10 levels per side at every width | [04](./docs/04-frontend.md#responsive-layout) |
 | Redis / Kafka / Postgres added to look "production" | Single authoritative in-memory engine; document the scaling path only | [adr/0004](./docs/adr/0004-no-redis-nats.md) |
 | Domain code importing Fastify or React | Dependency direction is one-way: transport → application → domain | [00](./docs/00-architecture.md#3-dependency-direction) |
 | `any`, non-null `!`, unchecked `as` | Real types; Zod parse at every boundary | §5 below |
@@ -204,7 +208,17 @@ When you are the orchestrating session:
 
 ---
 
-## 9. Change protocol
+## 9. Git
+
+- Repo: `github.com/SachPlayZ/exaint`, public, `main`.
+- **Never add attribution lines to commits or pull requests.** No `Co-Authored-By`, no
+  "Generated with" footer. Commit messages are the work, nothing else.
+- Commit messages: terse, imperative, scoped — `[p2] per-symbol book sequence`.
+- Commit or push only when asked.
+
+---
+
+## 10. Change protocol
 
 The docs are the source of truth, not the code.
 

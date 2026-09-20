@@ -284,10 +284,16 @@ drop book delta
 assert RESYNCING
 assert book recovers
 
-switch symbol BTC-USD → HYPE-USD
+reorder watchlist, then switch BTC-USD → HYPE-USD
 
 assert chart, book and trades all show HYPE-USD
 assert no stale BTC-USD rows leak in
+assert watchlist order survives a reload
+
+resize to 768px and 375px
+
+assert >= 10 bids and >= 10 asks still visible
+assert no horizontal page scroll
 
 set offline
 
@@ -315,15 +321,23 @@ missing book event
 invalid JSON
 late history
 late snapshot after symbol switch
+empty history
 duplicate candle
 expired ticket on reconnect
 rate-limit strike close (4429)
 hidden tab
 backend restart
+resource teardown
 ```
 
 - **invalid JSON** — fuzzed garbage frames; handler survives, process survives, client receives
   `INVALID_MESSAGE`
+- **empty history** — `200` with `candles: []` renders an empty chart, no crash, no error state;
+  then a single active candle renders correctly; then real history replaces it with no seam. Also
+  covers an empty order book and an empty trade list
+- **resource teardown** — 50 symbol switches, a background/foreground cycle, a disconnect, and an
+  unmount, then assert zero live timers, zero listeners, and one socket, against the table in
+  [`04-frontend.md §14`](../docs/04-frontend.md#14-resource-teardown)
 - **duplicate candle** — two versions of the same `interval + candleStart`; higher `lastTradeId`
   wins
 - **hidden tab** — hide under `30s` resumes normally; hide over `30s` triggers a snapshot +

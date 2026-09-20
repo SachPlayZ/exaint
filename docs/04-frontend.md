@@ -370,6 +370,12 @@ CandlestickChartAdapter
 
 wraps Lightweight Charts and owns every handle it creates.
 
+> **Hard constraint.** The chart library renders data **we** supply and nothing else. It must never
+> fetch, subscribe, poll, or stream on its own. Embedded charts, chart WebViews, and any widget
+> that sources its own market data are out of bounds — history fetching, interval switching, candle
+> formation, and late-response handling are all our code. If a library feature would reach the
+> network, it does not get used.
+
 ```ts
 series.setData(history)      // history / symbol switch / interval switch
 series.update(activeCandle)  // live
@@ -388,6 +394,25 @@ Rules:
   and `BTC-USD` at four decimals look equally wrong for opposite reasons.
 - Chart-boundary `number` conversion happens here and nowhere else, and the result never flows back
   into a calculation ([`02-market-domain.md §5`](./02-market-domain.md#5-numeric-precision)).
+
+### Empty and degenerate history
+
+`setData([])` is a legal state, not an error. History is empty whenever a symbol has just started,
+an interval bucket has not closed yet, or the engine restarted moments ago.
+
+```text
+history = []                  → render an empty chart, axes intact, no crash
+history = [] + active candle  → render the single active candle
+history arrives later         → setData() replaces the placeholder, no seam
+```
+
+Rules:
+
+- Never treat `[]` as a failed request. A `200` with zero candles is a valid answer.
+- Show an unobtrusive "waiting for market data" state over the chart area — never a spinner that
+  implies something is broken, and never an error toast.
+- The order book, price header, and trade list follow the same rule: empty is a state, not a fault.
+- A single candle must render correctly. Off-by-one range maths shows up here first.
 
 ### Merging history and realtime
 
@@ -596,8 +621,10 @@ Desktop:
 └────────────────────────────────────┴─────────────────┘
 ```
 
-- Symbol switcher is the leftmost header element, driven by `GET /v1/markets`.
-- Order book: cumulative depth bars behind the quantities, `25` levels per side.
+- Watchlist is the leftmost header element, driven by `GET /v1/markets` — see below.
+- Order book: cumulative depth bars behind the quantities. The backend keeps `25` levels per side;
+  the panel renders **at least the top 10 bids and top 10 asks**, and more when the viewport
+  allows. Ten per side is the floor, not the target.
 - Recent trades:
 
   ```text
@@ -609,6 +636,55 @@ Desktop:
 - Buy/sell direction is shown visually, but **not by colour alone** — accessibility.
 - Client keeps only the latest `50` trades for the selected symbol.
 - Price and quantity formatting come from the symbol's registry entry, not from a constant.
+
+### Watchlist
+
+The symbol switcher is a **reorderable watchlist**, not a fixed button row.
+
+```text
+┌──────────┐
+│ ⠿ BTC    │  ← drag handle
+│ ⠿ HYPE   │
+│ ⠿ ETH    │
+│ ⠿ SOL    │
+│ ⠿ ZEC    │
+└──────────┘
+```
+
+- Symbols come from `GET /v1/markets`. The *order* is the user's.
+- Drag to reorder. Keyboard reordering too — a drag-only control is unusable for anyone not using
+  a mouse.
+- Order persists in `localStorage`, wrapped in try/catch, with the registry order as the fallback.
+  This is a per-viewer convenience, not application state: a cleared browser loses the order and
+  nothing else. It never goes to the server.
+- Selecting a row switches symbol (§6). Reordering **never** switches symbol — the two gestures
+  must not be confusable.
+- An unknown symbol in the stored order (registry changed) is dropped silently; a new symbol not in
+  the stored order is appended.
+
+Live per-row prices would need the deferred `ticker` channel. The watchlist works without them.
+
+### Responsive layout
+
+Responsive is a requirement, not a nicety. Three breakpoints:
+
+```text
+≥1280px   full grid as drawn above
+ 768px+   chart full width; order book and trades stack beneath it;
+          watchlist collapses to a horizontal scroller
+<768px    single column: price header → chart → order book (10/side) → trades;
+          debug drawer becomes a full-width sheet
+```
+
+Rules:
+
+- No horizontal page scroll at any width. 16px side gutter on narrow screens.
+- The chart re-fits on container resize via `ResizeObserver`, debounced to one frame — not on
+  `window.resize`, which misses layout-only changes.
+- Ten bids and ten asks stay visible at every breakpoint. If space is tight, the trade list yields
+  first.
+- Touch: chart pan/zoom must not fight page scroll. The chart owns horizontal gestures, the page
+  owns vertical.
 
 ### Debug drawer
 
@@ -645,10 +721,48 @@ both rows move when the tier changes.
 
 ---
 
+---
+
+## 14. Resource teardown
+
+Everything created must be released. A terminal left open for an hour is the test.
+
+| Resource | Owner | Released on |
+| --- | --- | --- |
+| WebSocket | `MarketSocketClient` | unmount, explicit disconnect, before every reconnect attempt |
+| Reconnect / backoff timer | `MarketSocketClient` | connect success, unmount, disconnect |
+| Ping interval (`2s`) | `MarketSocketClient` | socket close, unmount |
+| `network.report` interval (`5s`) | `MarketSocketClient` | socket close, unmount |
+| In-flight ticket fetch | `MarketSocketClient` | `AbortController` on unmount or new attempt |
+| `visibilitychange` listener | `MarketSocketClient` | unmount |
+| `requestAnimationFrame` handle | UI publisher | unmount, and cancelled before scheduling another |
+| `ResizeObserver` | chart adapter | unmount |
+| Chart + series handles | `CandlestickChartAdapter` | unmount, symbol switch, interval switch |
+| Per-symbol synchroniser + buffer | `OrderBookSynchronizer` | unsubscribe, symbol switch |
+| In-flight history / snapshot request | TanStack Query | `AbortSignal` on key change or unmount |
+| Server-side subscription | backend | `unsubscribe` frame, or socket close |
+
+Rules:
+
+- Every `setInterval` / `setTimeout` / `addEventListener` / `requestAnimationFrame` has its
+  cancellation written **in the same commit**, ideally the same function.
+- Never rely on socket close to clean up timers. A socket can close without React unmounting, and
+  React can unmount without the socket closing.
+- A reconnect reuses nothing: new socket, new ticket, fresh timers. Reusing a half-torn-down client
+  is how zombie ping loops appear.
+- Unsubscribing a symbol drops its synchroniser, its delta buffer, and its trade list. A switcher
+  that leaks subscriptions hits `TOO_MANY_SUBSCRIPTIONS` after five clicks (§6).
+
+Verified in P11 by opening, switching symbols repeatedly, backgrounding, disconnecting, and
+unmounting — then asserting zero live timers, zero listeners, and one socket.
+
+---
+
 ## Open questions
 
-- Mobile / narrow layout: in scope, or desktop-only with a documented limitation?
-  *(assumed: responsive enough not to break, desktop-first)*
-- Live prices in the symbol switcher need a `ticker` channel
-  ([`01-protocol.md` open questions](./01-protocol.md#open-questions)). Deferred; the switcher
-  works as plain buttons.
+- Live per-row prices in the watchlist need a `ticker` channel
+  ([`01-protocol.md` open questions](./01-protocol.md#open-questions)). Deferred; the watchlist
+  works without them.
+
+**Resolved:** responsive layout is a requirement with three breakpoints (§13), not a desktop-only
+limitation.

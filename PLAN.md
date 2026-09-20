@@ -23,8 +23,11 @@ The deliverable is judged on defensible invariants, not on how pretty the chart 
 4. Recovery is demonstrable live: drop a delta → `RESYNCING` → recovered; go offline →
    `STALE` → `RECONNECTING` → `LIVE`, with the UI never blanking.
 5. Switching symbols is instant and never merges a late response into the wrong market.
-6. A 90–120s screen recording tells the whole technical story (§ Demo script).
-7. README explains the architecture well enough that a reviewer needs no walkthrough.
+6. The screen is genuinely responsive, and ≥10 bids and ≥10 asks stay visible at every width.
+7. A 90–120s screen recording tells the whole technical story (§ Demo script).
+8. README explains the architecture well enough that a reviewer needs no walkthrough, including
+   packages used and the router choice.
+9. Bonus claimed: watchlist reordering, plus separate-service deployment with automated builds.
 
 ---
 
@@ -348,11 +351,17 @@ leaves exactly one subscription behind.
 **Goal.** The screen a reviewer sees.
 
 **Deliverables.**
-- Desktop layout: header (symbol switcher, price, change, status, RTT, tier) · chart · order book ·
+- Desktop layout: header (watchlist, price, change, status, RTT, tier) · chart · order book ·
   network/debug · recent trades
-- Symbol switcher driven by `GET /v1/markets`, never hardcoded
-- Order book with cumulative depth bars; buy/sell distinguished by more than colour alone
+- **Watchlist** (bonus): symbols from `GET /v1/markets`, drag **and keyboard** reordering, order
+  persisted in `localStorage` behind try/catch with registry order as fallback; reordering never
+  switches symbol
+- **Responsive**: three breakpoints (≥1280 / ≥768 / <768), no horizontal page scroll, chart refit
+  via debounced `ResizeObserver`, chart gestures do not fight page scroll
+- Order book with cumulative depth bars, **at least top 10 bids and top 10 asks visible at every
+  breakpoint**; buy/sell distinguished by more than colour alone
 - Recent trades, newest first, capped at `50`
+- Empty states: zero candles, zero trades, and an empty book each render cleanly — never an error
 - Debug drawer, collapsed by default: connection id, symbol, last book sequence, last trade id,
   RTT, jitter, `autoTier`, `override`, `effectiveTier`, candle + trade target vs actual Hz, and
   `[Auto] [Full] [Degraded] [Minimal]` controls
@@ -360,7 +369,9 @@ leaves exactly one subscription behind.
 **Docs.** [`04-frontend.md`](./docs/04-frontend.md#13-screen-layout)
 
 **DoD.** Sustained live session holds a steady frame rate; React does not re-render per packet.
-Debug drawer shows automatic and effective tier diverging under an override.
+Debug drawer shows automatic and effective tier diverging under an override. Ten levels per side
+visible at 1280px, 768px and 375px with no horizontal scroll. Watchlist order survives a reload and
+a cleared `localStorage`.
 
 ---
 
@@ -370,16 +381,20 @@ Debug drawer shows automatic and effective tier diverging under an override.
 
 **Deliverables + explicit tests for each.**
 - network failure · missing book delta · invalid JSON frame · late history response · late snapshot
-  after a symbol switch · duplicate candle · expired ticket on reconnect · rate-limit strike close ·
-  hidden tab (under and over `30s`) · backend restart
+  after a symbol switch · **empty history** · duplicate candle · expired ticket on reconnect ·
+  rate-limit strike close · hidden tab (under and over `30s`) · backend restart
+- **Resource teardown audit** against the table in
+  [`04-frontend.md §14`](./docs/04-frontend.md#14-resource-teardown): open, switch symbols
+  repeatedly, background, disconnect, unmount → assert zero live timers, zero listeners, one socket
 - Hidden tab: socket stays alive, repaints stop, immediate ping on wake, hard refresh of snapshot
   and history for the selected symbol after a hide longer than `30s`
 - Disconnect UX: nothing blanks; everything is marked `STALE` with
   `Reconnecting… Last live update 4.2s ago`
 
-**Docs.** [`04-frontend.md §11`](./docs/04-frontend.md#11-disconnect-and-reconnect), [`§12`](./docs/04-frontend.md#12-browser-visibility), [`05-testing.md`](./docs/05-testing.md)
+**Docs.** [`04-frontend.md §11`](./docs/04-frontend.md#11-disconnect-and-reconnect), [`§12`](./docs/04-frontend.md#12-browser-visibility), [`§14`](./docs/04-frontend.md#14-resource-teardown), [`05-testing.md`](./docs/05-testing.md)
 
-**DoD.** Every listed failure has a passing automated test.
+**DoD.** Every listed failure has a passing automated test. Teardown audit shows no leaks after 50
+symbol switches.
 
 ---
 
@@ -393,14 +408,17 @@ Debug drawer shows automatic and effective tier diverging under an override.
 - Multi-stage Dockerfile: Node 24 LTS, non-root user, healthcheck, production deps only
 - Backend on Fly.io, frontend on Vercel, HTTPS + WSS, `AUTH_MODE=ticket` with a real
   `AUTH_TICKET_SECRET` from the platform secret store
-- Structured logs + metrics counters ([`06-ops-deploy.md`](./docs/06-ops-deploy.md#4-observability))
-- README filled out against the §53 structure, diagrams inline
+- Structured logs + metrics counters ([`06-ops-deploy.md`](./docs/06-ops-deploy.md#5-observability))
+- README filled out, diagrams inline, including **Packages used** (every dependency justified),
+  **Router choice**, **Bonus features**, and **Known limitations**
+- Repo `github.com/SachPlayZ/exaint` made public, with a clean history and no secrets committed
 - Main-branch CI: test → build web → build Docker → deploy both
 - 90–120s screen recording per the script below
 
 **Docs.** [`05-testing.md`](./docs/05-testing.md), [`06-ops-deploy.md`](./docs/06-ops-deploy.md)
 
 **DoD.** Green CI on `main`. Both deployments reachable. Recording uploaded and linked from README.
+Repo is public and a stranger can clone → `pnpm install` → `pnpm dev` with no private access.
 
 ---
 
@@ -412,7 +430,7 @@ Record correctness, not chrome. Target 90–120 seconds.
  1. Open terminal            → LIVE / Full / latency visible
  2. Chart updating           → hover a candle, show OHLCV
  3. Switch 1s → 5s → 1m      → history changes correctly
- 4. Switch BTC → HYPE → SOL  → five genuinely different markets
+ 4. Reorder watchlist, switch BTC → HYPE → SOL → five different markets
  5. Live order book          → bids/asks updating, depth bars
  6. Open debug drawer
  7. Force FULL               → ~10 Hz candles / ~5 Hz trades
@@ -459,13 +477,15 @@ Settled 2026-09-20. Do not relitigate without an ADR.
 | Book depth? | `25` per side, `MARKET_BOOK_DEPTH` |
 | Trade-batch cadence? | Tier-scaled: `5Hz` / `2Hz` / `0.5Hz` alongside candles ([03 §2](./docs/03-adaptive-delivery.md#2-delivery-scheduler)) |
 | Hidden-tab hard refresh? | `30s` (`VISIBILITY_HARD_REFRESH_MS`) |
+| Responsive layout? | Required, three breakpoints ([04 §13](./docs/04-frontend.md#responsive-layout)) |
+| Router? | App Router, thin server shell ([adr/0008](./docs/adr/0008-app-router.md)) |
+| Watchlist reordering (bonus)? | In scope — P10, persisted per browser |
 
 ## Open questions
 
 Carried until answered. Do not silently decide these.
 
-- A `ticker` channel for live prices in the symbol switcher — deferred, not rejected
-  ([01 open questions](./docs/01-protocol.md#open-questions)).
+- A `ticker` channel for live per-row prices in the watchlist — deferred, not rejected
+  ([01 open questions](./docs/01-protocol.md#open-questions)). The watchlist works without it.
 - `bufferedAmount` backpressure thresholds — pick in P6 and record them in
   [`03`](./docs/03-adaptive-delivery.md).
-- Mobile layout in scope, or desktop-only as a documented limitation?

@@ -121,12 +121,19 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P10 — UI + debug panel
 
-- [ ] header: symbol switcher (from `GET /v1/markets`), price, change, status, RTT, tier
-- [ ] order book with cumulative depth bars, 25 levels/side, non-colour-only direction
+- [ ] header: watchlist (from `GET /v1/markets`), price, change, status, RTT, tier
+- [ ] **watchlist reordering (bonus)** — drag + keyboard, `localStorage` order behind try/catch,
+      registry order as fallback, reorder never switches symbol
+- [ ] **responsive** — breakpoints ≥1280 / ≥768 / <768, no horizontal scroll, debounced
+      `ResizeObserver` chart refit, chart gestures vs page scroll
+- [ ] order book with cumulative depth bars, **≥10 bids and ≥10 asks visible at every breakpoint**,
+      non-colour-only direction
 - [ ] recent trades, capped at 50 for the selected symbol
 - [ ] per-symbol price/qty formatting from the registry
+- [ ] empty states: zero candles / zero trades / empty book all render cleanly
 - [ ] debug drawer incl. symbol, auto vs effective tier, candle + trade target vs actual Hz, 4 buttons
-- [ ] **Gate:** steady frame rate under load; no per-packet React render
+- [ ] **Gate:** steady frame rate under load; no per-packet React render; 10 levels/side at 1280,
+      768 and 375px; watchlist order survives reload
 
 ## P11 — Failure handling
 
@@ -135,12 +142,14 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [ ] invalid JSON
 - [ ] late history
 - [ ] late snapshot after a symbol switch
+- [ ] empty history (and empty book, empty trade list)
 - [ ] duplicate candle
 - [ ] expired ticket on reconnect
 - [ ] rate-limit strike close (4429)
 - [ ] hidden tab — under 30 s and over 30 s
 - [ ] backend restart
-- [ ] **Gate:** each has its own passing automated test
+- [ ] resource teardown audit vs `04 §14` table — timers, listeners, rAF, observers, sockets
+- [ ] **Gate:** each has its own passing automated test; no leaks after 50 symbol switches
 
 ## P12 — E2E, deploy, README, recording
 
@@ -148,7 +157,10 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [ ] Dockerfile: Node 24 LTS, non-root, healthcheck, multi-stage, prod deps only
 - [ ] Fly.io backend, Vercel frontend, HTTPS + WSS, `AUTH_MODE=ticket` + real secret
 - [ ] structured logs + all symbol-labelled and auth/rate-limit counters
-- [ ] README filled against the §53 structure with inline diagrams
+- [ ] README: architecture, state management, protocols, sync, latency/jitter, tiers, recovery,
+      debug controls, **Packages used**, **Router choice**, local dev, deployment, **Known
+      limitations**, **Bonus features**
+- [ ] repo public, clean history, no secrets committed
 - [ ] main-branch CI: test → build → docker → deploy
 - [ ] 90–120 s screen recording per the demo script
 - [ ] **Gate:** green CI on main; both deployments reachable; recording linked from README

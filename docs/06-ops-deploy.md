@@ -8,7 +8,22 @@
 
 ---
 
-## 1. Topology
+## 1. Repository
+
+```text
+github.com/SachPlayZ/exaint      public, branch `main`
+```
+
+- Public is a deliverable, not an afterthought: a stranger must be able to clone,
+  `pnpm install`, `pnpm dev`, and get a working terminal with no private access.
+- **No secrets in history.** `AUTH_TICKET_SECRET` and every deploy token live in the platform's
+  secret store. `.env.example` files are committed; `.env` files are not.
+- Commit messages carry **no attribution footers** of any kind.
+- CI runs on pull requests and on `main` (§5).
+
+---
+
+## 2. Topology
 
 ```text
 Frontend:
@@ -37,7 +52,7 @@ WSS WebSocket
 
 ---
 
-## 2. Environment variables
+## 3. Environment variables
 
 **Frontend (local):**
 
@@ -101,7 +116,7 @@ in the README — a reviewer will want to press the buttons.
 
 ---
 
-## 3. Docker
+## 4. Docker
 
 Multi-stage build:
 
@@ -118,7 +133,7 @@ want pnpm on their machine.
 
 ---
 
-## 4. Observability
+## 5. Observability
 
 ### Endpoints
 
@@ -181,7 +196,7 @@ trade batching, `trade_batches_delivered{tier}` shows the same shape.
 
 ---
 
-## 5. CI/CD
+## 6. CI/CD
 
 Pipelines are specified in [`05-testing.md §CI`](./05-testing.md#ci).
 
@@ -190,7 +205,7 @@ deploys from a laptop.
 
 ---
 
-## 6. Scaling caveat
+## 7. Scaling caveat
 
 If you run:
 
@@ -233,7 +248,7 @@ failure modes without solving a current requirement. Explaining the path is enou
 
 ---
 
-## 7. Local developer experience
+## 8. Local developer experience
 
 ```bash
 pnpm install      # root

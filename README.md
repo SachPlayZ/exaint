@@ -10,7 +10,8 @@ canonical market (order book, trades, OHLCV candles) and delivering it to every 
 a frequency tier chosen from that client's measured round-trip latency and jitter. Tiering changes
 **how often** a client is updated, never **what** it is told.
 
-- **Demo** — TODO (P12)
+- **Repo** — <https://github.com/SachPlayZ/exaint> (public)
+- **Demo recording** — TODO (P12)
 - **Screenshots** — TODO (P12)
 - **Live URL** — TODO (P12)
 
@@ -28,6 +29,35 @@ See [`docs/00-architecture.md`](./docs/00-architecture.md#2-repository-layout).
 
 See [`PLAN.md`](./PLAN.md#stack-fixed--see-adrs-before-changing-anything-here) and
 [`docs/adr/`](./docs/adr/).
+
+## Router choice — App Router
+
+App Router, with a thin Server Component shell and everything live below one `"use client"`
+boundary. Full reasoning, including why Server Components are deliberately *not* used for market
+data: [`docs/adr/0008-app-router.md`](./docs/adr/0008-app-router.md).
+
+## Packages used
+
+TODO (P12) — filled from the final lockfile. The table carries, for each package, what it does and
+why it is here:
+
+| Package | Role | Why this one |
+| --- | --- | --- |
+| `next` | App shell, routing, build | Required by the assignment; App Router ([ADR 0008](./docs/adr/0008-app-router.md)) |
+| `react` / `react-dom` | UI | Required |
+| `fastify` | HTTP + WS server | Small, fast, first-class TS types |
+| `@fastify/websocket` / `ws` | WebSocket transport | Native integration with the above |
+| `zod` | Runtime protocol validation | One schema is the source of truth for both apps ([`docs/01-protocol.md`](./docs/01-protocol.md#1-ownership)) |
+| `@tanstack/react-query` | REST server state | Query keys + `AbortSignal` cancellation solve the switch race ([`docs/04-frontend.md`](./docs/04-frontend.md#7-interval-switching)) |
+| `zustand` | Realtime UI state | Low-overhead, no provider tree, selector-level subscriptions |
+| `lightweight-charts` | Candlestick rendering **only** | Renderer for data we supply; it never fetches or streams ([`docs/04-frontend.md`](./docs/04-frontend.md#9-chart-adapter)) |
+| `tailwindcss` / `shadcn/ui` | Styling, primitives | Fast, responsive, accessible defaults |
+| `vitest` | Unit + integration tests | Same toolchain both sides |
+| `fast-check` | Property tests | Order-book invariant T4 |
+| `@playwright/test` | E2E recovery flows | Can block individual WS messages and emulate offline |
+| `turbo` / `pnpm` | Monorepo | Workspace builds and caching |
+
+Anything added beyond this list gets a row and a justification, or it does not get added.
 
 ## Symbols
 
@@ -131,7 +161,14 @@ See [`docs/06-ops-deploy.md`](./docs/06-ops-deploy.md).
 
 ## Environment variables
 
-See [`docs/06-ops-deploy.md`](./docs/06-ops-deploy.md#2-environment-variables).
+See [`docs/06-ops-deploy.md`](./docs/06-ops-deploy.md#3-environment-variables).
+
+## Bonus features
+
+- **Watchlist reordering** — drag or keyboard reorder, persisted per browser.
+  [`docs/04-frontend.md §13`](./docs/04-frontend.md#watchlist)
+- **Production-style deployment** — separate frontend and backend services, automated builds,
+  environment-based configuration. [`docs/06-ops-deploy.md`](./docs/06-ops-deploy.md)
 
 ## Known limitations
 

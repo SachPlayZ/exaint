@@ -62,7 +62,7 @@ one `ping` every `2s` and one `network.report` every `5s`. A client that trips t
   the backoff delay, so a down backend does not bypass backoff
   ([`../04-frontend.md §4`](../04-frontend.md#4-authentication)).
 - `AUTH_TICKET_SECRET` is now a required production secret. Documented in
-  [`../06-ops-deploy.md §2`](../06-ops-deploy.md#2-environment-variables).
+  [`../06-ops-deploy.md §2`](../06-ops-deploy.md#3-environment-variables).
 - Consumed ticket ids must be tracked. Bounded: a TTL set that cannot exceed `TTL × mint rate`.
 
 ## Alternatives rejected

@@ -64,4 +64,4 @@ above — engine stays singular, gateways become plural.
 
 ## Related
 
-[06 §6](../06-ops-deploy.md#6-scaling-caveat), [00 §6](../00-architecture.md#6-single-instance-constraint).
+[06 §6](../06-ops-deploy.md#7-scaling-caveat), [00 §6](../00-architecture.md#6-single-instance-constraint).
