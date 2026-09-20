@@ -1,5 +1,10 @@
 import { TicketService } from '../auth/ticket-service.js';
-import { loadAuthConfig, loadHttpConfig, loadMarketConfig } from '../config/env.js';
+import {
+  loadAuthConfig,
+  loadHttpConfig,
+  loadMarketConfig,
+  loadWebSocketConfig,
+} from '../config/env.js';
 import { MarketEngine } from '../market/market-engine.js';
 import { MarketRepository } from '../market/market-repository.js';
 import { SymbolRegistry } from '../market/symbol-registry.js';
@@ -21,6 +26,7 @@ export function createApplication(env: NodeJS.ProcessEnv = process.env): Applica
   const market = loadMarketConfig(env);
   const auth = loadAuthConfig(env);
   const http = loadHttpConfig(env);
+  const websocket = loadWebSocketConfig(env);
 
   const registry = new SymbolRegistry({
     symbols: market.symbols,
@@ -46,6 +52,7 @@ export function createApplication(env: NodeJS.ProcessEnv = process.env): Applica
           : null,
       auth,
       http,
+      websocket,
     },
     runtime: new MarketRuntime({ engine, metrics, maxCatchUpTicks: market.maxCatchUpTicks }),
   };

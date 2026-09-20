@@ -293,6 +293,10 @@ Sent as the WebSocket close status so the client can react without parsing a fra
 | `4409` | Backpressure close | Reconnect and take a fresh snapshot |
 | `4000` | Heartbeat timeout (45 s) | Normal reconnect |
 
+Heartbeat is measured on **inbound silence**: 45 s with no frame of any kind from the client closes
+the socket with `4000`. A well-behaved client pings every 2 s, so this only fires on a link that has
+genuinely gone away.
+
 An `error` frame is always sent **before** the close, so the reason is visible in both places.
 
 ---
@@ -315,6 +319,25 @@ An `error` frame is always sent **before** the close, so the reason is visible i
 Channels are independent: a connection may take `trades` for one symbol and all three for another.
 `interval` is required when `candles` is requested, and is **per symbol** — two symbols on one
 connection may sit on different intervals.
+
+### `subscribed`
+
+Acknowledges **any** subscription change — a `subscribe`, an `unsubscribe`, or a `set_interval` —
+and carries the resulting state rather than echoing the request.
+
+**Normative:**
+
+```json
+{
+  "type": "subscribed",
+  "symbol": "SOL-USD",
+  "channels": ["book", "trades", "candles"],
+  "interval": "1s"
+}
+```
+
+After an `unsubscribe`, `channels` is `[]` and `interval` is `null`. `interval` is `null` whenever
+the `candles` channel is absent, so a client can never read a stale interval off an acknowledgement.
 
 ### `trade` (domain shape, carried inside `trades.batch`)
 

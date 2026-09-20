@@ -1,4 +1,4 @@
-import type { AuthConfig, HttpConfig } from '../config/env.js';
+import type { AuthConfig, HttpConfig, WebSocketConfig } from '../config/env.js';
 import type { MarketRepository } from '../market/market-repository.js';
 import type { MetricsRegistry } from '../observability/metrics.js';
 import type { TicketService } from '../auth/ticket-service.js';
@@ -11,4 +11,5 @@ export interface AppContext {
   readonly tickets: TicketService | null;
   readonly auth: AuthConfig;
   readonly http: HttpConfig;
+  readonly websocket: WebSocketConfig;
 }

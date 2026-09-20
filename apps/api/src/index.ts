@@ -4,7 +4,7 @@ import { loadServerConfig } from './config/env.js';
 
 const config = loadServerConfig();
 const application = createApplication();
-const server = await buildServer(application.context);
+const server = await buildServer(application.context, application.runtime);
 
 application.runtime.start();
 

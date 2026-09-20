@@ -87,6 +87,14 @@ export const METRIC = {
   authTicketsIssued: 'auth_tickets_issued',
   authFailures: 'auth_failures',
   restRequests: 'rest_requests',
+  wsConnections: 'ws_connections',
+  connectionsByTier: 'connections_by_tier',
+  subscriptionsBySymbol: 'subscriptions_by_symbol',
+  invalidWsMessages: 'invalid_ws_messages',
+  rateLimitedFrames: 'rate_limited_frames',
+  rateLimitCloses: 'rate_limit_closes',
+  tradeBatchesDelivered: 'trade_batches_delivered',
+  candleUpdatesDelivered: 'candle_updates_delivered',
 } as const;
 
 export function createMetricsRegistry(): MetricsRegistry {
@@ -101,5 +109,21 @@ export function createMetricsRegistry(): MetricsRegistry {
   metrics.register(METRIC.authTicketsIssued, 'counter', 'Connect tickets minted.');
   metrics.register(METRIC.authFailures, 'counter', 'Rejected tickets, by reason.');
   metrics.register(METRIC.restRequests, 'counter', 'REST requests, by route and status class.');
+  metrics.register(METRIC.wsConnections, 'counter', 'WebSocket connections accepted.');
+  metrics.register(METRIC.connectionsByTier, 'gauge', 'Open connections, by effective tier.');
+  metrics.register(METRIC.subscriptionsBySymbol, 'gauge', 'Open subscriptions, per symbol.');
+  metrics.register(METRIC.invalidWsMessages, 'counter', 'Inbound frames rejected by validation.');
+  metrics.register(METRIC.rateLimitedFrames, 'counter', 'Frames dropped by the limiter, by type.');
+  metrics.register(METRIC.rateLimitCloses, 'counter', 'Sockets closed for sustained rate abuse.');
+  metrics.register(
+    METRIC.tradeBatchesDelivered,
+    'counter',
+    'trades.batch frames delivered, per symbol and tier.',
+  );
+  metrics.register(
+    METRIC.candleUpdatesDelivered,
+    'counter',
+    'candles.update frames delivered, per symbol and tier. Drops as clients degrade, while candle_updates_generated stays flat.',
+  );
   return metrics;
 }

@@ -14,6 +14,8 @@ export const TEST_SECRET = 'test-secret-not-used-anywhere-real';
 
 export interface TestApp {
   readonly server: FastifyInstance;
+  /** Starts listening and returns the `ws://` base URL for the gateway. */
+  listen(): Promise<string>;
   readonly context: AppContext;
   readonly runtime: MarketRuntime;
   readonly registry: SymbolRegistry;
@@ -24,7 +26,15 @@ export interface TestApp {
 
 /** A server wired to a deterministic market, driven by hand rather than a timer. */
 export async function createTestApp(
-  options: { readonly authMode?: 'ticket' | 'off'; readonly ticketTtlMs?: number } = {},
+  options: {
+    readonly authMode?: 'ticket' | 'off';
+    readonly ticketTtlMs?: number;
+    readonly ticketNow?: () => number;
+    readonly enableDebugControls?: boolean;
+    readonly maxSubscriptions?: number;
+    readonly heartbeatTimeoutMs?: number;
+    readonly heartbeatCheckMs?: number;
+  } = {},
 ): Promise<TestApp> {
   const registry = new SymbolRegistry({
     symbols: DEFAULT_SYMBOLS,
@@ -41,17 +51,37 @@ export async function createTestApp(
     metrics,
     tickets:
       (options.authMode ?? 'ticket') === 'ticket'
-        ? new TicketService({ secret: TEST_SECRET, ttlMs })
+        ? new TicketService({ secret: TEST_SECRET, ttlMs, now: options.ticketNow })
         : null,
     auth: { mode: options.authMode ?? 'ticket', secret: TEST_SECRET, ttlMs },
-    http: { allowedOrigins: ['http://localhost:3000'], enableDebugControls: true },
+    http: {
+      allowedOrigins: ['http://localhost:3000'],
+      enableDebugControls: options.enableDebugControls ?? true,
+    },
+    websocket: {
+      globalFramesPerSecond: 20,
+      strikeLimit: 3,
+      maxSubscriptions: options.maxSubscriptions ?? 5,
+      maxFrameBytes: 8_192,
+    },
   };
 
-  const server = await buildServer(context);
+  const server = await buildServer(context, runtime, {
+    ...(options.heartbeatTimeoutMs === undefined
+      ? {}
+      : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
+    ...(options.heartbeatCheckMs === undefined
+      ? {}
+      : { heartbeatCheckMs: options.heartbeatCheckMs }),
+  });
   await server.ready();
 
   return {
     server,
+    async listen(): Promise<string> {
+      const address = await server.listen({ host: '127.0.0.1', port: 0 });
+      return `${address.replace('http://', 'ws://')}/v1/ws`;
+    },
     context,
     runtime,
     registry,

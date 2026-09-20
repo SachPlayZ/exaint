@@ -33,6 +33,13 @@ export interface HttpConfig {
   readonly enableDebugControls: boolean;
 }
 
+export interface WebSocketConfig {
+  readonly globalFramesPerSecond: number;
+  readonly strikeLimit: number;
+  readonly maxSubscriptions: number;
+  readonly maxFrameBytes: number;
+}
+
 function readInteger(
   name: string,
   raw: string | undefined,
@@ -135,5 +142,25 @@ export function loadHttpConfig(env: NodeJS.ProcessEnv = process.env): HttpConfig
   return {
     allowedOrigins,
     enableDebugControls: (env.ENABLE_DEBUG_CONTROLS ?? 'false') === 'true',
+  };
+}
+
+export function loadWebSocketConfig(env: NodeJS.ProcessEnv = process.env): WebSocketConfig {
+  return {
+    globalFramesPerSecond: readInteger(
+      'RATE_LIMIT_GLOBAL_PER_SEC',
+      env.RATE_LIMIT_GLOBAL_PER_SEC,
+      20,
+      { min: 1, max: 10_000 },
+    ),
+    strikeLimit: readInteger('RATE_LIMIT_STRIKES', env.RATE_LIMIT_STRIKES, 3, { min: 1, max: 100 }),
+    maxSubscriptions: readInteger('MAX_SUBSCRIPTIONS_PER_CONN', env.MAX_SUBSCRIPTIONS_PER_CONN, 5, {
+      min: 1,
+      max: 100,
+    }),
+    maxFrameBytes: readInteger('MAX_FRAME_BYTES', env.MAX_FRAME_BYTES, 8_192, {
+      min: 256,
+      max: 1_048_576,
+    }),
   };
 }

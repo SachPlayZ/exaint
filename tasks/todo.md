@@ -4,9 +4,9 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P5 (not started). P0–P4 complete — scaffold, protocol contracts, deterministic
-five-symbol market domain, canonical candle engine, and the REST API; 178 passing tests.
-See § Review.
+**Current phase:** P6 (not started). P0–P5 complete — scaffold, protocol contracts, deterministic
+five-symbol market domain, canonical candle engine, REST API, and the WebSocket gateway;
+205 passing tests. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -70,14 +70,15 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P5 — WebSocket gateway
 
-- [ ] `/v1/ws?ticket=` endpoint
-- [ ] `AuthService` — mint / verify / single-use, close codes 4401 + 4408
-- [ ] `RateLimiter` — per-frame-type + global buckets, 3 strikes → close 4429
-- [ ] `ConnectionSession` + `SymbolSubscription` with the full field lists
-- [ ] all six client frames (incl. `channels`), all eight server frames
-- [ ] Zod validation + `INVALID_MESSAGE` without dropping the connection
-- [ ] heartbeat
-- [ ] **Gate:** T7 passes; fuzzed garbage survives; two connections hold different symbols and
+- [x] `/v1/ws?ticket=` endpoint
+- [x] `AuthService` — mint / verify / single-use, close codes 4401 + 4408
+- [x] `RateLimiter` — per-frame-type + global buckets, 3 strikes → close 4429
+- [x] `ConnectionSession` + `SymbolSubscription` with the full field lists
+- [x] all six client frames (incl. `channels`), seven of eight server frames
+      (`tier.changed` is P6)
+- [x] Zod validation + `INVALID_MESSAGE` without dropping the connection
+- [x] heartbeat
+- [x] **Gate:** T7 passes; fuzzed garbage survives; two connections hold different symbols and
       intervals; a connection outlives its ticket's `exp`
 
 ## P6 — Adaptive delivery
@@ -380,3 +381,49 @@ slots from the touch outward, contiguity is asserted every tick in
 - `/metrics` carries only the counters that exist by P4; the `ws_*`, `tier_*` and
   `*_delivered{tier}` series arrive with the gateway and the scheduler.
 - The rate limiter here is the per-IP REST one. The per-connection token buckets are P5.
+
+### P5 — WebSocket gateway (complete)
+
+**What changed.** `apps/api/src/websocket/`: `rate-limiter.ts`, `connection-session.ts`,
+`frame-handler.ts`, `dispatcher.ts`, `gateway.ts`. Largest file is 173 lines. `build-server.ts`
+registers the gateway; `create-app.ts` supplies the new `WebSocketConfig`; the metrics registry
+gained the `ws_*`, `*_delivered` and `subscriptions_by_symbol` series.
+
+**Verified.** 205 tests green (58 protocol, 147 api), `lint`/`typecheck`/`build` clean, plus a live
+`ws://` session against `pnpm dev:api` that produced `hello`, `subscribed`, `pong`, an
+`UNKNOWN_TYPE` error, and then 50 `book.delta`, 29 `trades.batch` and 30 `candles.update` frames in
+2.5 s.
+- **T7 in full.** Ticket half over the real socket: valid → `hello`; missing → `UNAUTHORIZED` +
+  `4401`; bad signature → `UNAUTHORIZED` + `4401`; expired → `TICKET_EXPIRED` + `4408`; replayed →
+  `TICKET_EXPIRED` + `4408`, with the first connection still open. Rate-limiter half against a fake
+  clock: ping at 2/s never limited over 500 pings; a burst of 10 passes exactly 4; the bucket
+  refills by elapsed time (half a second buys exactly one token, and never exceeds the burst);
+  3 strikes in 10 s closes `4429`; strikes older than 10 s are forgotten.
+- **A connection outlives its ticket.** The clock is pushed ten minutes past `exp` and the socket
+  still answers a ping. That test exists to stop someone "helpfully" adding session expiry later.
+- **Two connections, different symbols and different intervals**, simultaneously, with neither
+  seeing the other's frames. Also `set_interval` on one symbol leaving the other's interval alone.
+- Fuzzed garbage — empty frames, truncated JSON, arrays, nulls, `__proto__`, a 5 KB id — leaves the
+  socket open and still answering.
+- Heartbeat is tested end to end by shortening the timeout: a silent socket closes `4000` while a
+  chatty one on the same server stays open.
+- Teardown: closing a socket drops it from the dispatcher, the `subscriptions_by_symbol` gauge
+  returns to 0, and a later tick dispatches without throwing.
+
+**Design decisions worth knowing.**
+- **One runtime subscription for the whole process**, not one per socket. The market is computed
+  once and every connection is served from it — the structural form of I2.
+- **`subscribed` acknowledges state, not the request.** It carries the resulting channels (`[]`
+  after an unsubscribe) and interval (`null` whenever `candles` is absent), so a client can never
+  read a stale interval off an acknowledgement. Now normative in `docs/01-protocol.md §6`.
+- **Heartbeat is inbound silence**, 45 s, close `4000`. Documented in `§5`. Made injectable purely
+  so the close path has a real test rather than a 45-second one.
+- `debug.tier_override` already sets `effectiveTier` only and is gated by `ENABLE_DEBUG_CONTROLS`;
+  `autoTier` is untouched. The `tier.changed` frame and the hysteresis that drives it are P6.
+- Delivery is immediate in this phase, by design — the per-connection scheduler is P6. Book deltas
+  will stay unpaced either way.
+
+**Still open.**
+- `tier.changed`, the tier controller, the delivery scheduler and backpressure are P6.
+- `ws_reconnects`, `tier_changes` and `book_resyncs` counters land with the phases that can
+  observe them.

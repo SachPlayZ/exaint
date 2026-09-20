@@ -2,6 +2,8 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.js';
+import type { MarketRuntime } from './market-runtime.js';
+import { registerWebSocketGateway, type GatewayOptions } from '../websocket/gateway.js';
 import { registerAuthRoutes } from '../routes/auth.js';
 import { registerHealthRoutes } from '../routes/health.js';
 import { registerMarketRoutes } from '../routes/markets.js';
@@ -9,10 +11,12 @@ import { registerMarketRoutes } from '../routes/markets.js';
 /**
  * Builds the Fastify instance without listening, so tests can drive it
  * in-process against a deterministic engine.
- *
- * The WebSocket gateway is registered here in P5.
  */
-export async function buildServer(context: AppContext): Promise<FastifyInstance> {
+export async function buildServer(
+  context: AppContext,
+  runtime: MarketRuntime,
+  gateway: GatewayOptions = {},
+): Promise<FastifyInstance> {
   const server = Fastify({
     logger: {
       // Structured JSON lines — docs/06-ops-deploy.md §5.
@@ -61,6 +65,7 @@ export async function buildServer(context: AppContext): Promise<FastifyInstance>
   registerHealthRoutes(server, context);
   registerMarketRoutes(server, context);
   registerAuthRoutes(server, context);
+  await registerWebSocketGateway(server, context, runtime, gateway);
 
   server.setNotFoundHandler((_request, reply) =>
     reply.code(404).send({ code: 'UNKNOWN_SYMBOL', message: 'no such route' }),
