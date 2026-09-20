@@ -6,11 +6,8 @@ import type {
   Interval,
   MarketSummary,
 } from '@repo/protocol';
-import type {
-  CandleHistoryController,
-  HistorySelectionResult,
-} from './candle-history-controller.js';
-import type { OrderBookRegistry } from '../orderbook/synchronizer.js';
+import type { CandleHistoryController, HistorySelectionResult } from './candle-history-controller';
+import type { OrderBookRegistry } from '../orderbook/synchronizer';
 
 const MARKET_CHANNELS: readonly Channel[] = ['book', 'trades', 'candles'];
 
@@ -62,6 +59,10 @@ export class MarketSelectionController {
 
   get selectedInterval(): Interval | null {
     return this.#interval;
+  }
+
+  get hasCandles(): boolean {
+    return this.#history.hasCandles;
   }
 
   async selectMarket(market: MarketSummary, interval: Interval): Promise<HistorySelectionResult> {

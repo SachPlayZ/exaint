@@ -2,17 +2,17 @@
 
 import type { Interval, MarketSummary } from '@repo/protocol';
 import type { QueryClient } from '@tanstack/react-query';
-import type { MarketRestClient } from '../api/rest-client.js';
-import { OrderBookRegistry } from '../orderbook/synchronizer.js';
-import type { MarketSocketClient } from '../socket/market-socket-client.js';
+import type { MarketRestClient } from '../api/rest-client';
+import { OrderBookRegistry } from '../orderbook/synchronizer';
+import type { MarketSocketClient } from '../socket/market-socket-client';
 import {
   CandleHistoryController,
   type ChartSessionFactory,
   type HistorySelectionResult,
-} from './candle-history-controller.js';
-import { CandlestickChartAdapter, type ChartHoverValue } from './candlestick-chart-adapter.js';
-import { MarketSelectionController } from './market-selection-controller.js';
-import { QueryCandleHistorySource } from './query-history-source.js';
+} from './candle-history-controller';
+import { CandlestickChartAdapter, type ChartHoverValue } from './candlestick-chart-adapter';
+import { MarketSelectionController } from './market-selection-controller';
+import { QueryCandleHistorySource } from './query-history-source';
 
 /** Production composition root for the P9 chart path. Mounted by the P10 terminal. */
 export class MarketChartPipeline {
@@ -59,6 +59,10 @@ export class MarketChartPipeline {
 
   selectInterval(interval: Interval): Promise<HistorySelectionResult> {
     return this.selection.selectInterval(interval);
+  }
+
+  get hasCandles(): boolean {
+    return this.selection.hasCandles;
   }
 
   dispose(): void {

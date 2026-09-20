@@ -4,29 +4,33 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P10 (not started). P0–P9 complete — the backend, React-free frontend networking,
-per-symbol order-book synchronisation, and the imperative chart pipeline; 300 passing tests. All
-three invariants have passing tests on both sides of the wire. See § Review.
+**Current phase:** P11 (not started). P0–P10 complete — the backend, React-free frontend networking,
+per-symbol order-book synchronisation, imperative chart pipeline, and responsive terminal UI; 319
+passing tests. All three invariants have passing tests on both sides of the wire. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
 [`../PLAN.md` § Decisions](../PLAN.md#decisions).
 
-## Active plan — P9
+## Active plan — P10
 
 ### Plan
 
-- [x] Add Lightweight Charts 5.2 and an imperative `CandlestickChartAdapter`
-- [x] Add candle merge/history controller with response tags, abort, and generation guards
-- [x] Add symbol/interval selection controller with subscribe-before-unsubscribe and per-symbol sync
-- [x] Add T5/T6 race, merge, adapter, and subscription-lifecycle tests
-- [x] Update P9 progress and review evidence
+- [x] Add browser socket adapter and rAF-published terminal runtime over P7–P9 models
+- [x] Build terminal shell: header, chart controls/readout, book, trades, debug drawer
+- [x] Add registry-driven watchlist drag/keyboard reorder with guarded persistence
+- [x] Implement ≥1280 / ≥768 / <768 layouts, 10+ levels/side, no page overflow
+- [x] Add pure/runtime tests for watchlist, trade caps/order, frame rates, and render scheduling
+- [x] Demonstrate 1280 / 768 / 375 layouts against the live API
+- [x] Update P10 progress and review evidence
 
 ### Files likely touched
 
-- `apps/web/package.json`, `pnpm-lock.yaml`
-- `apps/web/features/market/chart/*`
-- `apps/web/tests/chart/*`
+- `apps/web/app/*`
+- `apps/web/features/market/runtime/*`
+- `apps/web/features/market/components/*`
+- `apps/web/features/market/watchlist/*`
+- `apps/web/tests/runtime/*`, `apps/web/tests/watchlist/*`
 - `tasks/todo.md`
 
 ### Verification
@@ -36,7 +40,8 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [x] `pnpm typecheck`
 - [x] `pnpm test`
 - [x] `pnpm build`
-- [x] inspect `git diff` and confirm only P9 files changed
+- [x] live browser check at 1280 / 768 / 375
+- [x] inspect `git diff` and confirm only P10 files changed
 
 ### Unresolved questions
 
@@ -155,18 +160,18 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P10 — UI + debug panel
 
-- [ ] header: watchlist (from `GET /v1/markets`), price, change, status, RTT, tier
-- [ ] **watchlist reordering (bonus)** — drag + keyboard, `localStorage` order behind try/catch,
+- [x] header: watchlist (from `GET /v1/markets`), price, change, status, RTT, tier
+- [x] **watchlist reordering (bonus)** — drag + keyboard, `localStorage` order behind try/catch,
       registry order as fallback, reorder never switches symbol
-- [ ] **responsive** — breakpoints ≥1280 / ≥768 / <768, no horizontal scroll, debounced
+- [x] **responsive** — breakpoints ≥1280 / ≥768 / <768, no horizontal scroll, debounced
       `ResizeObserver` chart refit, chart gestures vs page scroll
-- [ ] order book with cumulative depth bars, **≥10 bids and ≥10 asks visible at every breakpoint**,
+- [x] order book with cumulative depth bars, **≥10 bids and ≥10 asks visible at every breakpoint**,
       non-colour-only direction
-- [ ] recent trades, capped at 50 for the selected symbol
-- [ ] per-symbol price/qty formatting from the registry
-- [ ] empty states: zero candles / zero trades / empty book all render cleanly
-- [ ] debug drawer incl. symbol, auto vs effective tier, candle + trade target vs actual Hz, 4 buttons
-- [ ] **Gate:** steady frame rate under load; no per-packet React render; 10 levels/side at 1280,
+- [x] recent trades, capped at 50 for the selected symbol
+- [x] per-symbol price/qty formatting from the registry
+- [x] empty states: zero candles / zero trades / empty book all render cleanly
+- [x] debug drawer incl. symbol, auto vs effective tier, candle + trade target vs actual Hz, 4 buttons
+- [x] **Gate:** steady frame rate under load; no per-packet React render; 10 levels/side at 1280,
       768 and 375px; watchlist order survives reload
 
 ## P11 — Failure handling
@@ -633,3 +638,28 @@ source to the socket, book registry, real adapter, and teardown callbacks for P1
   a failed replacement snapshot cannot leak the previous symbol subscription.
 
 **Still open.** P10 mounts the adapter in the terminal UI and adds the debounced `ResizeObserver`.
+
+### P10 — UI + debug panel (complete)
+
+**What changed.** Replaced the placeholder with a live industrial signal-room terminal. A
+React-free runtime composes REST, WebSocket, book synchronisation and chart selection; market data
+mutates immediately but immutable React snapshots publish at most once per animation frame. Added
+registry-driven watchlist reordering, session-labelled price change, 50-trade tape, cumulative-depth
+book, four-state delivery override panel, rolling actual cadence, empty states and responsive
+desktop/tablet/mobile layouts. The chart now owns a frame-debounced `ResizeObserver` and cancels it
+on disposal.
+
+**Verified.** 319 tests green (58 protocol, 177 api, 84 web), `lint`/`typecheck`/`build` clean.
+Focused tests prove numeric per-symbol trade ordering and cap, rAF coalescing/cancellation, rolling
+rates, guarded watchlist persistence/reconciliation, and resize observer debounce/disposal. Live
+API/browser checks at 1280, 768 and 375 px showed 12 asks + 12 bids, a rendered chart, LIVE status,
+and `scrollWidth === clientWidth`; symbol and interval switches succeeded. Keyboard reordering did
+not change the selected market and survived a reload.
+
+**Review fixes.** Loaded history now clears the waiting overlay without waiting for the next live
+candle. A one-second debug refresh ages actual Hz to zero after traffic stops. UI CSS is split below
+the ~300-line module limit. Session change semantics are recorded in `docs/04-frontend.md` rather
+than implying unavailable 24-hour data.
+
+**Still open.** P11 owns reconnect/resync recovery, visibility handling and the exhaustive failure
+and resource-teardown matrix.

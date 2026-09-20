@@ -47,6 +47,37 @@ export interface CandlestickChartAdapterOptions {
   readonly onHoverChange?: (value: ChartHoverValue | null) => void;
   /** Test seam: production always uses the Lightweight Charts backend below. */
   readonly createBackend?: ChartBackendFactory;
+  readonly createResizeObserver?: ResizeObserverFactory;
+  readonly animationFrame?: AnimationFrameApi;
+}
+
+export interface ResizeObserverHandle {
+  observe(element: Element): void;
+  disconnect(): void;
+}
+
+export type ResizeObserverFactory = (
+  onResize: (width: number, height: number) => void,
+) => ResizeObserverHandle;
+
+export interface AnimationFrameApi {
+  request(callback: () => void): number;
+  cancel(handle: number): void;
+}
+
+const browserAnimationFrame: AnimationFrameApi = {
+  request: (callback) => requestAnimationFrame(callback),
+  cancel: (handle) => cancelAnimationFrame(handle),
+};
+
+function createBrowserResizeObserver(
+  onResize: (width: number, height: number) => void,
+): ResizeObserverHandle {
+  const observer = new ResizeObserver((entries) => {
+    const entry = entries[0];
+    if (entry !== undefined) onResize(entry.contentRect.width, entry.contentRect.height);
+  });
+  return observer;
 }
 
 function precisionForTickSize(tickSize: string): number {
@@ -84,7 +115,6 @@ function createLightweightBackend(
   options: ChartBackendFactoryOptions,
 ): ChartBackend {
   const chart: IChartApi = createChart(container, {
-    autoSize: true,
     layout: {
       background: { type: ColorType.Solid, color: '#09090b' },
       textColor: '#a1a1aa',
@@ -139,8 +169,12 @@ function createLightweightBackend(
 export class CandlestickChartAdapter implements ChartSession {
   readonly #backend: ChartBackend;
   readonly #onHoverChange: ((value: ChartHoverValue | null) => void) | undefined;
+  readonly #animationFrame: AnimationFrameApi;
+  readonly #resizeObserver: ResizeObserverHandle | null;
   readonly #candlesBySecond = new Map<number, Candle>();
   #latestStartTime = -1;
+  #pendingResize: { readonly width: number; readonly height: number } | null = null;
+  #resizeFrame: number | null = null;
   #disposed = false;
 
   constructor(
@@ -154,11 +188,21 @@ export class CandlestickChartAdapter implements ChartSession {
       throw new RangeError(`tickSize is not chartable: ${tickSize}`);
     }
     this.#onHoverChange = options.onHoverChange;
+    this.#animationFrame = options.animationFrame ?? browserAnimationFrame;
     this.#backend = (options.createBackend ?? createLightweightBackend)(container, {
       precision,
       minMove,
       onCrosshairTime: (timeSeconds) => this.#onCrosshairTime(timeSeconds),
     });
+    const createObserver =
+      options.createResizeObserver ??
+      (typeof ResizeObserver === 'undefined' ? undefined : createBrowserResizeObserver);
+    if (typeof container === 'string' || createObserver === undefined) {
+      this.#resizeObserver = null;
+    } else {
+      this.#resizeObserver = createObserver((width, height) => this.#queueResize(width, height));
+      this.#resizeObserver.observe(container);
+    }
   }
 
   setData(candles: readonly Candle[]): void {
@@ -188,6 +232,10 @@ export class CandlestickChartAdapter implements ChartSession {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#resizeObserver?.disconnect();
+    if (this.#resizeFrame !== null) this.#animationFrame.cancel(this.#resizeFrame);
+    this.#resizeFrame = null;
+    this.#pendingResize = null;
     this.#candlesBySecond.clear();
     this.#onHoverChange?.(null);
     this.#backend.dispose();
@@ -197,6 +245,18 @@ export class CandlestickChartAdapter implements ChartSession {
     if (this.#disposed || this.#onHoverChange === undefined) return;
     const candle = timeSeconds === null ? undefined : this.#candlesBySecond.get(timeSeconds);
     this.#onHoverChange(candle === undefined ? null : { candle });
+  }
+
+  #queueResize(width: number, height: number): void {
+    if (this.#disposed) return;
+    this.#pendingResize = { width, height };
+    if (this.#resizeFrame !== null) return;
+    this.#resizeFrame = this.#animationFrame.request(() => {
+      this.#resizeFrame = null;
+      const size = this.#pendingResize;
+      this.#pendingResize = null;
+      if (size !== null) this.#backend.resize(size.width, size.height);
+    });
   }
 }
 

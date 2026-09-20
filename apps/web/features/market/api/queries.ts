@@ -4,8 +4,8 @@ import type { Interval } from '@repo/protocol';
 import { CANDLE_HISTORY_LIMIT_MAX } from '@repo/protocol';
 import { queryOptions, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { MarketsResponse, BookSnapshotResponse, CandleHistoryResponse } from '@repo/protocol';
-import { MarketRestClient } from './rest-client.js';
-import { queryKeys } from './query-keys.js';
+import { MarketRestClient } from './rest-client';
+import { queryKeys } from './query-keys';
 
 /**
  * REST server state (docs/04-frontend.md §8). TanStack Query owns fetching,

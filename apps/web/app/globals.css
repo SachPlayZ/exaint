@@ -1,9 +1,53 @@
 @import 'tailwindcss';
+@import './terminal.css';
+@import './terminal-panels.css';
+@import './terminal-responsive.css';
 
 :root {
   color-scheme: dark;
+  --ink: #080a09;
+  --surface: #0d100f;
+  --surface-raised: #121614;
+  --line: #252c28;
+  --line-bright: #3a453f;
+  --paper: #e9eee9;
+  --muted: #829087;
+  --signal: #b9ff42;
+  --signal-soft: #72a92d;
+  --ask: #ff765f;
+  --bid: #5fd6b4;
+  --amber: #f0b866;
+  --display: 'Avenir Next Condensed', 'Franklin Gothic Medium', 'Arial Narrow', sans-serif;
+  --mono: 'SFMono-Regular', 'Cascadia Code', 'Liberation Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
 }
 
 body {
-  @apply bg-neutral-950 text-neutral-100 antialiased;
+  margin: 0;
+  overflow-x: hidden;
+  background:
+    linear-gradient(rgba(185, 255, 66, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(185, 255, 66, 0.018) 1px, transparent 1px), var(--ink);
+  background-size: 48px 48px;
+  color: var(--paper);
+  font-family: var(--mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+summary {
+  font: inherit;
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
 }

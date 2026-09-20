@@ -6,9 +6,9 @@ import {
   type Interval,
 } from '@repo/protocol';
 import type { QueryClient } from '@tanstack/react-query';
-import { candleHistoryQueryOptions } from '../api/queries.js';
-import type { MarketRestClient } from '../api/rest-client.js';
-import type { CandleHistorySource } from './candle-history-controller.js';
+import { candleHistoryQueryOptions } from '../api/queries';
+import type { MarketRestClient } from '../api/rest-client';
+import type { CandleHistorySource } from './candle-history-controller';
 
 /** TanStack Query-backed history source used by the browser chart pipeline. */
 export class QueryCandleHistorySource implements CandleHistorySource {

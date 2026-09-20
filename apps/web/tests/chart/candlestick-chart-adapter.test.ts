@@ -2,8 +2,10 @@ import type { CandlestickData, Time } from 'lightweight-charts';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CandlestickChartAdapter,
+  type AnimationFrameApi,
   type ChartBackend,
   type ChartBackendFactoryOptions,
+  type ResizeObserverHandle,
 } from '../../features/market/chart/candlestick-chart-adapter.js';
 import { candle } from './helpers.js';
 
@@ -42,5 +44,50 @@ describe('CandlestickChartAdapter', () => {
     expect(resize).toHaveBeenCalledWith(800, 400);
     expect(hover.mock.calls).toEqual([[{ candle: first }], [null], [null]]);
     expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('coalesces observer resizes into one frame and cancels pending work on disposal', () => {
+    vi.stubGlobal('HTMLElement', class {});
+    const container = new HTMLElement();
+    const resize = vi.fn<(width: number, height: number) => void>();
+    const disconnect = vi.fn<() => void>();
+    const observe = vi.fn<(element: Element) => void>();
+    let onResize: ((width: number, height: number) => void) | undefined;
+    let frameCallback: (() => void) | undefined;
+    const animationFrame: AnimationFrameApi = {
+      request: (callback) => {
+        frameCallback = callback;
+        return 7;
+      },
+      cancel: vi.fn(),
+    };
+    const observer: ResizeObserverHandle = { observe, disconnect };
+    const adapter = new CandlestickChartAdapter(container, '0.1000', {
+      createBackend: () => ({
+        setData: vi.fn(),
+        update: vi.fn(),
+        resize,
+        dispose: vi.fn(),
+      }),
+      createResizeObserver: (callback) => {
+        onResize = callback;
+        return observer;
+      },
+      animationFrame,
+    });
+
+    onResize?.(640, 360);
+    onResize?.(800, 420);
+    expect(observe).toHaveBeenCalledWith(container);
+    expect(resize).not.toHaveBeenCalled();
+    frameCallback?.();
+    expect(resize).toHaveBeenCalledOnce();
+    expect(resize).toHaveBeenCalledWith(800, 420);
+
+    onResize?.(900, 500);
+    adapter.dispose();
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(animationFrame.cancel).toHaveBeenCalledWith(7);
+    vi.unstubAllGlobals();
   });
 });

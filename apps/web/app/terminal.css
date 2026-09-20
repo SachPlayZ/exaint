@@ -1,0 +1,227 @@
+.terminal-shell {
+  min-height: 100svh;
+  width: 100%;
+  padding: 12px;
+}
+
+.terminal-shell::before {
+  position: fixed;
+  z-index: 20;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--signal);
+  content: '';
+  box-shadow: 0 0 24px rgba(185, 255, 66, 0.5);
+}
+
+.terminal-header,
+.watchlist,
+.panel,
+.terminal-footer {
+  border: 1px solid var(--line);
+  background: rgba(13, 16, 15, 0.96);
+}
+
+.terminal-header {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.8fr) minmax(390px, 1.4fr) auto;
+  min-height: 86px;
+  align-items: stretch;
+}
+
+.brand-lockup,
+.market-tape,
+.live-cluster {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 14px 18px;
+}
+
+.brand-lockup,
+.market-tape {
+  border-inline-end: 1px solid var(--line);
+}
+
+.brand-lockup {
+  gap: 12px;
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--signal);
+  color: var(--ink);
+  font: 900 18px/1 var(--display);
+  letter-spacing: -0.08em;
+  transform: skew(-5deg);
+}
+
+.brand-lockup strong,
+.brand-lockup small {
+  display: block;
+}
+
+.brand-lockup strong {
+  font: 800 20px/1 var(--display);
+  letter-spacing: 0.13em;
+}
+
+.brand-lockup small,
+.eyebrow,
+.watchlist-label {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+.market-tape {
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.market-tape strong,
+.panel h2 {
+  display: block;
+  margin: 4px 0 0;
+  font: 800 18px/1 var(--display);
+  letter-spacing: 0.08em;
+}
+
+.price-block {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 16px;
+  text-align: end;
+}
+
+.market-price {
+  font: 700 clamp(22px, 2.3vw, 34px)/1 var(--display);
+  letter-spacing: -0.025em;
+}
+
+.change-positive,
+.change-negative {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.change-positive {
+  color: var(--bid);
+}
+.change-negative {
+  color: var(--ask);
+}
+.price-block small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.live-cluster {
+  gap: 8px;
+  justify-content: flex-end;
+}
+.status-pill,
+.metric-chip {
+  min-height: 32px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-bright);
+  color: var(--paper);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.status-pill i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+.status-live i {
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+.status-stale i,
+.status-error i {
+  background: var(--ask);
+}
+.metric-chip small {
+  color: var(--muted);
+}
+.tier-chip {
+  color: var(--signal);
+}
+
+.watchlist {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  margin-block: 8px;
+}
+.watchlist-label {
+  display: grid;
+  min-width: 106px;
+  place-items: center;
+  border-inline-end: 1px solid var(--line);
+}
+.watchlist-track {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.watch-item {
+  display: flex;
+  min-width: 132px;
+  border-inline-end: 1px solid var(--line);
+  background: transparent;
+}
+.watch-item.selected {
+  background: rgba(185, 255, 66, 0.07);
+}
+.drag-handle,
+.watch-select,
+.interval-switcher button,
+.override-controls button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.drag-handle {
+  width: 44px;
+  border-inline-end: 1px solid var(--line);
+}
+.drag-handle:hover {
+  color: var(--signal);
+}
+.watch-select {
+  flex: 1;
+  padding: 8px 12px;
+  text-align: start;
+}
+.watch-select span,
+.watch-select small {
+  display: block;
+}
+.watch-select span {
+  color: var(--paper);
+  font: 800 15px/1 var(--display);
+  letter-spacing: 0.05em;
+}
+.watch-select small {
+  margin-top: 5px;
+  font-size: 8px;
+}
+.watch-item.selected .watch-select span {
+  color: var(--signal);
+}

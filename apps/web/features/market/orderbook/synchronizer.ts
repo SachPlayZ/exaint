@@ -1,6 +1,6 @@
 import type { BookDeltaFrame, BookSnapshotResponse } from '@repo/protocol';
 import { parseIdentifier } from '@repo/protocol';
-import { LocalOrderBook } from './order-book-model.js';
+import { LocalOrderBook } from './order-book-model';
 
 /**
  * Client-side order-book synchronisation — I1 (docs/04-frontend.md §5,

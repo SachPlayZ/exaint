@@ -2,10 +2,10 @@ node_modules/
 dist/
 .next/
 .turbo/
+.impeccable/
 coverage/
 pnpm-lock.yaml
 
 # Prose is hand-formatted: docs carry ASCII diagrams and fixed-width tables that
 # Prettier would reflow.
 *.md
-

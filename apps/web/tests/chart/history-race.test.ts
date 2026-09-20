@@ -67,6 +67,7 @@ describe('T5 late history response', () => {
     const session = sessions.created[0]?.session;
     expect(session?.setDataCalls).toEqual([[liveRevision]]);
     expect(session?.updates).toEqual([next, nextActive]);
+    expect(controller.hasCandles).toBe(true);
   });
 
   it('disposes the previous chart only after replacement history is ready', async () => {
@@ -78,6 +79,7 @@ describe('T5 late history response', () => {
     source.requests[0]?.response.resolve(history('BTC-USD', '1s', []));
     await first;
     const firstSession = sessions.created[0]?.session;
+    expect(controller.hasCandles).toBe(false);
 
     const second = controller.select({ symbol: 'BTC-USD', interval: '5s', tickSize: '0.1000' });
     expect(firstSession?.disposeCalls).toBe(0);
@@ -87,6 +89,7 @@ describe('T5 late history response', () => {
     expect(firstSession?.disposeCalls).toBe(1);
     controller.dispose();
     expect(sessions.created[1]?.session.disposeCalls).toBe(1);
+    expect(controller.hasCandles).toBe(false);
   });
 
   it('returns to the active chart when replacement history fails', async () => {

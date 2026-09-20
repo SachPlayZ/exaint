@@ -1,7 +1,7 @@
 import type { Candle, CandleHistoryResponse, CandlesUpdateFrame } from '@repo/protocol';
-import type { CandleScope } from './candle-data.js';
-import { isCandleNewer, mergeCandles } from './candle-data.js';
-import type { ChartSession } from './candlestick-chart-adapter.js';
+import type { CandleScope } from './candle-data';
+import { isCandleNewer, mergeCandles } from './candle-data';
+import type { ChartSession } from './candlestick-chart-adapter';
 
 export interface ChartSessionFactory {
   create(scope: CandleScope): ChartSession;
@@ -51,6 +51,10 @@ export class CandleHistoryController {
 
   get scope(): CandleScope | null {
     return this.#pendingScope ?? this.#activeScope;
+  }
+
+  get hasCandles(): boolean {
+    return this.#activeCandles.size > 0;
   }
 
   async select(scope: CandleScope): Promise<HistorySelectionResult> {

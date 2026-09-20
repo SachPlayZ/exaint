@@ -5,9 +5,9 @@ import {
   ERROR_AFTER_ATTEMPTS,
   STABLE_CONNECTION_MS,
   backoffDelayMs,
-} from './backoff.js';
-import { TypedEmitter } from './emitter.js';
-import { LatencyTracker } from './latency-tracker.js';
+} from './backoff';
+import { TypedEmitter } from './emitter';
+import { LatencyTracker } from './latency-tracker';
 import type {
   ConnectionState,
   DesiredSubscription,
@@ -15,7 +15,7 @@ import type {
   SocketEvents,
   TimerApi,
   WebSocketLike,
-} from './types.js';
+} from './types';
 
 /** App-level probe cadence (docs/03-adaptive-delivery.md §3–§4). */
 export const PING_INTERVAL_MS = 2_000;

@@ -643,6 +643,8 @@ Desktop:
 
 - Buy/sell direction is shown visually, but **not by colour alone** — accessibility.
 - Client keeps only the latest `50` trades for the selected symbol.
+- Header change is **session change**: first observed trade after selecting the symbol to the latest
+  trade, labelled `SESSION`. There is no 24 h ticker in the protocol, so the UI must not imply one.
 - Price and quantity formatting come from the symbol's registry entry, not from a constant.
 
 ### Watchlist

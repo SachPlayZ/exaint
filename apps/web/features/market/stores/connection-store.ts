@@ -2,7 +2,7 @@
 
 import type { Tier } from '@repo/protocol';
 import { create } from 'zustand';
-import type { ConnectionState } from '../socket/types.js';
+import type { ConnectionState } from '../socket/types';
 
 /**
  * Realtime application state (docs/04-frontend.md §8).
