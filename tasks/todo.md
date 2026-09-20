@@ -4,8 +4,8 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P7 (not started). P0–P6 complete — the whole backend, including adaptive
-delivery; 235 passing tests. See § Review.
+**Current phase:** P8 (not started). P0–P7 complete — the whole backend plus the React-free
+frontend networking layer; 272 passing tests. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -94,14 +94,14 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P7 — Frontend networking
 
-- [ ] `MarketSocketClient` (no React)
-- [ ] ticket fetched fresh per attempt, inside the backoff; never cached, never in `localStorage`
-- [ ] close-code handling: 4401 / 4408 → new ticket; 4429 → backoff; 4409 → resync
-- [ ] backoff 250 ms → 10 s with jitter, reset after stability
-- [ ] 2 s ping via `performance.now()`, 5 s `network.report`
-- [ ] connection state machine (6 states)
-- [ ] Zustand store + TanStack Query wiring
-- [ ] **Gate:** socket client unit-tested React-free; reconnect follows the 9 documented steps
+- [x] `MarketSocketClient` (no React)
+- [x] ticket fetched fresh per attempt, inside the backoff; never cached, never in `localStorage`
+- [x] close-code handling: 4401 / 4408 → new ticket; 4429 → backoff; 4409 → resync
+- [x] backoff 250 ms → 10 s with jitter, reset after stability
+- [x] 2 s ping via `performance.now()`, 5 s `network.report`
+- [x] connection state machine (6 states)
+- [x] Zustand store + TanStack Query wiring
+- [x] **Gate:** socket client unit-tested React-free; reconnect follows the 9 documented steps
 
 ## P8 — Order-book synchroniser
 
@@ -489,3 +489,48 @@ form of the same argument, and is now quoted in `docs/06-ops-deploy.md §5`.
   connection is already on produces no frame, which a socket test asserts by absence.
 
 **Still open.** Nothing in the backend. P7 starts the frontend.
+
+### P7 — Frontend networking (complete)
+
+**What changed.** `apps/web/features/market/`: `socket/` (`market-socket-client.ts`, `backoff.ts`,
+`latency-tracker.ts`, `emitter.ts`, `types.ts`), `api/` (`rest-client.ts`, `queries.ts`,
+`query-keys.ts`), `stores/connection-store.ts`.
+
+**Verified.** 272 tests green (58 protocol, 177 api, 37 web), `lint`/`typecheck`/`build` clean.
+**Not one web test imports React** — the socket client is driven against a fake socket and fake
+timers, which is exactly what T5, T6 and T7 will need.
+- Connect: ticket fetched, put in the URL, `CONNECTING → SYNCING → LIVE`.
+- A fresh ticket per attempt; a failed ticket fetch is a failed attempt that goes through the
+  backoff rather than round it.
+- Reconnect reapplies the desired subscriptions and the per-symbol interval, and emits `resync` so
+  the book and history are rebuilt.
+- An override is reapplied **only** if the user explicitly chose one, and clearing it survives a
+  reconnect — a reconnect must not resurrect an override the user already cleared.
+- Close codes: `4401`/`4408` fetch a new ticket; `4429` waits out the backoff (asserted by *not*
+  reconnecting at 50 ms); `4409` emits `resync: backpressure`; `4000` reconnects normally.
+- Backoff ladder, jitter spread and the stability reset all asserted; `ERROR` surfaces after the
+  ceiling is hit repeatedly and retries continue.
+- Latency: ping every 2 s, RTT measured as a duration, EWMA at α = 0.2, `network.report` every 5 s
+  carrying the sample count, and **no report at all** when nothing new was measured.
+- Teardown: `disconnect()` leaves zero pending timers and no socket, and a late close afterwards
+  does not start a reconnect.
+
+**Design decisions worth knowing.**
+- **Every clock and timer is injectable.** `performance.now` and the real timers are only defaults;
+  tests supply their own, so no socket test depends on machine speed.
+- **The ticket has no accessor.** It exists as a local inside one connect attempt and reaches only
+  the URL — there is nowhere for it to be cached from.
+- **`AUTHENTICATING` is not a state**, per `docs/04 §3`; the ticket fetch is the first step of
+  `CONNECTING`.
+- **`LatencyTracker.takeReport()` returns `null` when nothing was measured.** Reporting a stale
+  number would tell the server the link is fine precisely when it has gone quiet.
+- **Zustand holds only the chrome.** Per-packet market data never passes through it; the domain
+  models publish a snapshot once per frame (P10).
+- Backoff jitter (`±20%`), the stability window (`= BACKOFF_MAX_MS`) and the `ERROR` threshold
+  (`steps + 3`) were not in the docs; they are derived from the ladder and now recorded in
+  `docs/04 §11`.
+
+**Still open.**
+- `markSynchronized()` / `markSyncing()` are the seam the P8 synchronisers drive.
+- Visibility handling (`docs/04 §12`) needs the DOM and lands with the React layer in P10/P11;
+  `sendPing()` is already public for the immediate probe on wake.

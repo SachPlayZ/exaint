@@ -539,6 +539,14 @@ max 10s
 Random jitter is added to avoid synchronised reconnect storms across clients. Reset the retry count
 after a sufficiently stable connection.
 
+Numbers chosen in P7, all derived from the ladder rather than invented alongside it:
+
+| Knob | Value | Why |
+| --- | --- | --- |
+| Jitter spread | `±20%` | Enough to break up a thundering herd, small enough to stay predictable |
+| "Sufficiently stable" | `10s` (`BACKOFF_MAX_MS`) | A connection healthy for longer than the ceiling has demonstrably recovered |
+| `ERROR` after | `9` attempts (`steps + 3`) | The ceiling has been reached three times; retries continue regardless |
+
 ### On reconnect — in this order
 
 ```text
