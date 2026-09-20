@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - '8080:8080'
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - MARKET_SYMBOLS=BTC-USD,ETH-USD,SOL-USD,HYPE-USD,ZEC-USD
+      - MARKET_SEED=1337
+      - ALLOWED_ORIGINS=http://localhost:3000
+      - AUTH_MODE=off
+      - AUTH_TICKET_SECRET=dev-only-not-a-real-secret
+      - AUTH_TICKET_TTL_MS=60000
+      - ENABLE_DEBUG_CONTROLS=true
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:8080/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8080/v1/ws
+    depends_on:
+      api:
+        condition: service_healthy

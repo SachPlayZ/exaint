@@ -464,4 +464,17 @@ describe('teardown', () => {
     // Dispatching to a closed connection must not throw.
     expect(() => app.pump(20)).not.toThrow();
   });
+
+  it('tracks ws_reconnects metric when reconnect=true is supplied', async () => {
+    const { app, url } = await bootstrap();
+    const ticket = await mintTicket(app);
+    const socket = await TestSocket.connect(
+      `${url}?ticket=${encodeURIComponent(ticket)}&reconnect=true`,
+    );
+    sockets.push(socket);
+    await socket.waitFor('hello');
+
+    const metrics = await app.server.inject({ method: 'GET', url: '/metrics' });
+    expect(metrics.body).toMatch(/ws_reconnects 1/);
+  });
 });

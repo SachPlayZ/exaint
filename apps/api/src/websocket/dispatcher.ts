@@ -18,6 +18,7 @@ export interface ConnectionHandle {
   readonly send: (frame: ServerFrame) => void;
   readonly bufferedAmount: () => number;
   readonly close: (code: number, reason: string) => void;
+  readonly onResyncClose?: (reason: string) => void;
 }
 
 /**
@@ -64,6 +65,7 @@ export class MarketDispatcher {
         // Book deltas may never be dropped, so there is no lever left. A closed
         // socket is an observable resync; a dropped delta is silent corruption.
         handle.send({ type: 'error', code: 'BACKPRESSURE_CLOSE' });
+        handle.onResyncClose?.('backpressure');
         handle.close(CLOSE_CODES.BACKPRESSURE, 'outbound book stream unrecoverable');
         continue;
       }

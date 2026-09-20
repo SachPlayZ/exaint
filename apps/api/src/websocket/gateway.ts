@@ -71,8 +71,9 @@ export async function registerWebSocketGateway(
   }
 
   server.get('/v1/ws', { websocket: true }, (socket, request) => {
-    const ticket = (request.query as { ticket?: unknown } | undefined)?.ticket;
-    const rawTicket = typeof ticket === 'string' ? ticket : undefined;
+    const query = request.query as { ticket?: unknown; reconnect?: unknown } | undefined;
+    const rawTicket = typeof query?.ticket === 'string' ? query.ticket : undefined;
+    const isReconnect = query?.reconnect === 'true' || query?.reconnect === true;
 
     const send = (frame: ServerFrame): void => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame));
@@ -119,6 +120,12 @@ export async function registerWebSocketGateway(
       send,
       bufferedAmount: () => socket.bufferedAmount,
       close,
+      onResyncClose: (reason) => {
+        request.log.warn(
+          { event: 'ws.close_resync', connectionId: session.connectionId, reason },
+          'resync-causing close',
+        );
+      },
     };
 
     /** Emitted whenever `effectiveTier` moves, so the UI never has to infer it. */
@@ -157,12 +164,21 @@ export async function registerWebSocketGateway(
     dispatcher.add(handle);
     dispatcherHandles.add(handle);
     context.metrics.increment(METRIC.wsConnections);
+    if (isReconnect) {
+      context.metrics.increment(METRIC.wsReconnects);
+    }
     refreshGauges();
     // Never log a ticket value — log its subject (docs/06-ops-deploy.md §5).
     request.log.info(
       { event: 'ws.connected', connectionId: session.connectionId, sub: subject },
       'connection accepted',
     );
+    if (isReconnect) {
+      request.log.info(
+        { event: 'ws.reconnected', connectionId: session.connectionId, sub: subject },
+        'connection reconnected',
+      );
+    }
 
     send({
       type: 'hello',
@@ -199,6 +215,27 @@ export async function registerWebSocketGateway(
         onNetworkReport: (rttMs, jitterMs) =>
           announceTier(tiers.applyReport(rttMs, jitterMs, now())),
         onTierOverride: (tier) => announceTier(tiers.setOverride(tier)),
+        onRateLimitStrike: (frameType, strikes, isClose) => {
+          request.log.warn(
+            {
+              event: 'rate_limit.strike',
+              connectionId: session.connectionId,
+              frameType,
+              strikes,
+            },
+            'rate limit strike',
+          );
+          if (isClose) {
+            request.log.warn(
+              {
+                event: 'ws.close_resync',
+                connectionId: session.connectionId,
+                reason: 'rate_limited',
+              },
+              'rate limit close',
+            );
+          }
+        },
       });
     });
 

@@ -96,6 +96,8 @@ export const METRIC = {
   tierChanges: 'tier_changes',
   tradeBatchesDelivered: 'trade_batches_delivered',
   candleUpdatesDelivered: 'candle_updates_delivered',
+  wsReconnects: 'ws_reconnects',
+  bookResyncs: 'book_resyncs',
 } as const;
 
 export function createMetricsRegistry(): MetricsRegistry {
@@ -111,6 +113,7 @@ export function createMetricsRegistry(): MetricsRegistry {
   metrics.register(METRIC.authFailures, 'counter', 'Rejected tickets, by reason.');
   metrics.register(METRIC.restRequests, 'counter', 'REST requests, by route and status class.');
   metrics.register(METRIC.wsConnections, 'counter', 'WebSocket connections accepted.');
+  metrics.register(METRIC.wsReconnects, 'counter', 'WebSocket reconnection attempts.');
   metrics.register(METRIC.connectionsByTier, 'gauge', 'Open connections, by effective tier.');
   metrics.register(METRIC.subscriptionsBySymbol, 'gauge', 'Open subscriptions, per symbol.');
   metrics.register(METRIC.invalidWsMessages, 'counter', 'Inbound frames rejected by validation.');
@@ -127,5 +130,6 @@ export function createMetricsRegistry(): MetricsRegistry {
     'counter',
     'candles.update frames delivered, per symbol and tier. Drops as clients degrade, while candle_updates_generated stays flat.',
   );
+  metrics.register(METRIC.bookResyncs, 'counter', 'Order book resynchronisations, per symbol.');
   return metrics;
 }

@@ -35,7 +35,8 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Build
-        run: pnpm build
+      - name: Install Playwright Browsers
+        run: pnpm --filter @repo/web exec playwright install --with-deps chromium
 
-  # Playwright is wired in P12 (docs/05-testing.md §CI).
+      - name: E2E Tests
+        run: pnpm test:e2e

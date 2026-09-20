@@ -259,6 +259,7 @@ describe('rate limiting', () => {
 
 describe('GET /metrics', () => {
   it('exposes symbol-labelled Prometheus counters', async () => {
+    await app.server.inject({ method: 'GET', url: '/v1/markets/BTC-USD/book' });
     const response = await app.server.inject({ method: 'GET', url: '/metrics' });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/plain');
@@ -267,5 +268,8 @@ describe('GET /metrics', () => {
     expect(body).toMatch(/trades_generated\{symbol="BTC-USD"\} [1-9]/);
     expect(body).toMatch(/book_sequence\{symbol="HYPE-USD"\} [1-9]/);
     expect(body).toContain('auth_tickets_issued');
+    expect(body).toContain('# TYPE book_resyncs counter');
+    expect(body).toMatch(/book_resyncs\{symbol="BTC-USD"\} [1-9]/);
+    expect(body).toContain('# TYPE ws_reconnects counter');
   });
 });

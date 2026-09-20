@@ -2,6 +2,7 @@ import type { CandleHistoryResponse, MarketsResponse } from '@repo/protocol';
 import { CandleHistoryQuerySchema, SymbolParamsSchema } from '@repo/protocol';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app/context.js';
+import { METRIC } from '../observability/metrics.js';
 import { sendError } from './errors.js';
 
 /** 120 requests per minute per IP for market reads (docs/01-protocol.md §4). */
@@ -26,6 +27,7 @@ export function registerMarketRoutes(server: FastifyInstance, context: AppContex
 
       const snapshot = context.repository.bookSnapshot(params.data.symbol);
       if (snapshot === undefined) return sendError(reply, 'UNKNOWN_SYMBOL');
+      context.metrics.increment(METRIC.bookResyncs, { symbol: params.data.symbol });
       return reply.send(snapshot);
     },
   );

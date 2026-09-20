@@ -101,6 +101,10 @@ export class MarketSocketClient {
     this.#attempt = 0;
     this.#hasSeenHello = false;
     this.#visibility.start();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('offline', this.#handleOffline);
+      window.addEventListener('online', this.#handleOnline);
+    }
     this.#setState('CONNECTING');
     void this.#attemptConnect();
   }
@@ -112,12 +116,39 @@ export class MarketSocketClient {
     this.#ticketAbort?.abort();
     this.#ticketAbort = null;
     this.#visibility.stop();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('offline', this.#handleOffline);
+      window.removeEventListener('online', this.#handleOnline);
+    }
     const socket = this.#socket;
     this.#socket = null;
     if (socket !== null) this.#detachSocket(socket);
     socket?.close(1000, 'client disconnect');
     this.#setState('STALE');
   }
+
+  readonly #handleOffline = (): void => {
+    if (!this.#started) return;
+    this.#log('socket.offline', {});
+    this.#setState('STALE');
+    const socket = this.#socket;
+    if (socket !== null) {
+      try {
+        socket.close(1000, 'network offline');
+      } catch {
+        // Browser WebSockets disallow certain close codes
+      }
+    }
+    this.#scheduleReconnect();
+  };
+
+  readonly #handleOnline = (): void => {
+    if (!this.#started) return;
+    this.#log('socket.online', {});
+    this.#clearReconnectTimer();
+    this.#setState('RECONNECTING');
+    void this.#attemptConnect();
+  };
 
   subscribe(symbol: string, channels: readonly Channel[], interval: Interval | null): void {
     this.#desired.subscribe(symbol, channels, interval);
@@ -184,8 +215,9 @@ export class MarketSocketClient {
     if (!this.#started || ticketAbort.signal.aborted) return;
 
     const separator = this.#options.wsUrl.includes('?') ? '&' : '?';
+    const reconnectParam = this.#hasSeenHello ? '&reconnect=true' : '';
     const socket = this.#options.createSocket(
-      `${this.#options.wsUrl}${separator}ticket=${encodeURIComponent(ticket)}`,
+      `${this.#options.wsUrl}${separator}ticket=${encodeURIComponent(ticket)}${reconnectParam}`,
     );
     this.#socket = socket;
 

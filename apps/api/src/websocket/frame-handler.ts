@@ -17,6 +17,7 @@ export interface FrameHandlerDeps {
   readonly onSubscriptionsChanged: () => void;
   readonly onNetworkReport: (rttMs: number, jitterMs: number) => void;
   readonly onTierOverride: (tier: Tier | null) => void;
+  readonly onRateLimitStrike?: (frameType: string, strikes: number, isClose: boolean) => void;
 }
 
 /**
@@ -40,6 +41,7 @@ export function handleClientFrame(raw: string, deps: FrameHandlerDeps): void {
   const verdict = session.rateLimiter.check(frame.type);
   if (verdict !== 'allow') {
     metrics.increment(METRIC.rateLimitedFrames, { frame_type: frame.type });
+    deps.onRateLimitStrike?.(frame.type, session.rateLimiter.strikes, verdict === 'close');
     send({ type: 'error', code: 'RATE_LIMITED' });
     if (verdict === 'close') {
       metrics.increment(METRIC.rateLimitCloses);
