@@ -34,6 +34,41 @@ Five symbols, five fully independent engines:
 Configured by `MARKET_SYMBOLS`. Price scale `4` and quantity scale `8` are **uniform** — only
 `tickSize`, base price, size distribution, and volatility vary. One codec, five personalities.
 
+### Calibration
+
+The "Character" column above is qualitative; these are the numbers that produce it, chosen in P2
+and owned by `apps/api/src/market/symbol-config.ts`.
+
+| Symbol | Level spacing | Spread | Volatility / tick | Resting size / level |
+| --- | ---: | ---: | ---: | --- |
+| `BTC-USD` | `4.0000` | 1 spacing | `1.5000` | `0.05 – 1.5` |
+| `ETH-USD` | `0.2100` | 1 spacing | `0.0790` | `0.5 – 25` |
+| `SOL-USD` | `0.0210` | 2 spacings | `0.0158` | `5 – 350` |
+| `HYPE-USD` | `0.0080` | 3 spacings | `0.0120` | `25 – 900` |
+| `ZEC-USD` | `0.0400` | 2 spacings | `0.0225` | `3 – 200` |
+
+- **Level spacing** is the gap between two *displayed* levels, always a whole multiple of
+  `tickSize`. The ladder is a grid. Twenty-five adjacent ticks on `BTC-USD` would span `2.50` —
+  a third of a basis point — so the whole book would be rewritten several times a second and no
+  reviewer could read it. Grouping to `4.0000` gives 25 levels spanning ~15 bp, which persists for
+  seconds and still moves. Trades still print at any multiple of `tickSize`.
+- **Volatility** is the largest fair-value step per logical tick, and is ~⅛ of the level spacing,
+  so the fair value crosses a grid step every few ticks. The book breathes rather than being
+  rebuilt.
+- **Thinness** is the ratio of resting size to trade size. `BTC-USD` and `ETH-USD` absorb a typical
+  trade inside one level; `HYPE-USD` does not. That is what "thinnest book" means here.
+
+Measured over one simulated minute from `MARKET_SEED=1337` (asserted in
+`apps/api/tests/market/simulator.test.ts`):
+
+```text
+BTC-USD    spread 0.59 bp    1-min range  4.8 bp
+ETH-USD    spread 0.59 bp    1-min range  2.4 bp
+SOL-USD    spread 1.96 bp    1-min range 17.6 bp
+ZEC-USD    spread 2.30 bp    1-min range 12.7 bp
+HYPE-USD   spread 6.22 bp    1-min range 82.9 bp
+```
+
 The differing character is deliberate: five identical random walks at different price levels looks
 like one symbol rendered five times. A reviewer switching from `BTC-USD` to `HYPE-USD` should
 immediately see a different market.
@@ -363,6 +398,9 @@ per-connection.
 
 ## Open questions
 
+- Catch-up is currently unbounded: after a long stall, `MarketEngine.runOwedTicks` runs every owed
+  tick in one pass, which blocks the event loop for as long as it takes. A cap needs a number, and
+  the number belongs with the scheduler that will own it — decide in P4/P5 and record it here.
 - Should the simulator model correlated moves across symbols — a market-wide risk-off tick — or
   keep the five streams fully independent? *(assumed: independent; correlation is a nice demo
   touch with no bearing on any invariant, so it is the first thing cut for time)*

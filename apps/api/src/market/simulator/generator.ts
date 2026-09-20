@@ -1,0 +1,212 @@
+import type { Side } from '@repo/protocol';
+import type { DomainTrade } from '../events.js';
+import { clampBigInt, floorToTick, maxBigInt, minBigInt } from '../fixed-point.js';
+import type { OrderBook, BookSide } from '../orderbook/order-book.js';
+import type { SymbolConfig } from '../symbol-config.js';
+import type { Prng } from './prng.js';
+
+/**
+ * Event generation for **one** symbol. Three event kinds, exactly as
+ * docs/02-market-domain.md §6 describes: new limit order, cancellation/update,
+ * and market trade.
+ *
+ * This is not a matching engine and does not need to be. What it does need is a
+ * coherent relationship between trades and the book: a buy consumes asks, a sell
+ * consumes bids, and a print never happens at a price no level ever offered.
+ *
+ * Price discovery works the way a real market's does — the fair value walks, and
+ * the book follows because stale quotes get *traded through*, not silently
+ * deleted.
+ */
+export class MarketSimulator {
+  readonly config: SymbolConfig;
+  readonly #prng: Prng;
+  #fairValue: bigint;
+  readonly #floor: bigint;
+  readonly #ceiling: bigint;
+
+  constructor(config: SymbolConfig, prng: Prng) {
+    if (config.levelSpacing % config.tickSize !== 0n) {
+      throw new RangeError(`${config.symbol}: levelSpacing must be a multiple of tickSize`);
+    }
+    this.config = config;
+    this.#prng = prng;
+    this.#fairValue = config.basePrice;
+    // A seeded walk left alone for hours must not reach zero or run away.
+    this.#floor = config.basePrice / 4n;
+    this.#ceiling = config.basePrice * 4n;
+  }
+
+  get fairValue(): bigint {
+    return this.#fairValue;
+  }
+
+  /** Builds the opening ladder. Emits no delta — the book opens at sequence 0. */
+  seedBook(book: OrderBook): void {
+    const { bid, ask } = this.#targets();
+    this.#requote(book, bid, ask);
+    this.#replenish(book, bid, ask);
+    book.trim();
+    book.clearPendingChanges();
+  }
+
+  /** Advances this symbol by one logical tick. */
+  tick(book: OrderBook, timestamp: number, allocateTradeId: () => bigint): DomainTrade[] {
+    const trades: DomainTrade[] = [];
+
+    this.#fairValue = clampBigInt(
+      this.#fairValue + this.#prng.nextBellBetween(this.config.volatility),
+      this.#floor,
+      this.#ceiling,
+    );
+    const { bid: desiredBid, ask: desiredAsk } = this.#targets();
+
+    // Price discovery: lift stale offers, hit stale bids.
+    this.#fill(book, trades, 'buy', null, desiredAsk, timestamp, allocateTradeId);
+    this.#fill(book, trades, 'sell', null, desiredBid, timestamp, allocateTradeId);
+
+    // Noise: a trade that is not explained by the fair value moving.
+    if (this.#prng.nextFloat() < this.config.tradeProbability) {
+      const side: Side = this.#prng.nextBoolean() ? 'buy' : 'sell';
+      const quantity = this.#prng.nextBigIntBetween(
+        this.config.minTradeQuantity,
+        this.config.maxTradeQuantity,
+      );
+      this.#fill(book, trades, side, quantity, null, timestamp, allocateTradeId);
+    }
+
+    this.#churn(book);
+    this.#requote(book, desiredBid, desiredAsk);
+    this.#replenish(book, desiredBid, desiredAsk);
+    book.trim();
+
+    return trades;
+  }
+
+  /** Grid-aligned best bid and best ask implied by the current fair value. */
+  #targets(): { bid: bigint; ask: bigint } {
+    const anchor = floorToTick(this.#fairValue, this.config.levelSpacing);
+    return {
+      bid: anchor,
+      ask: anchor + this.config.levelSpacing * BigInt(this.config.spreadSpacings),
+    };
+  }
+
+  #randomLevelQuantity(): bigint {
+    return this.#prng.nextBigIntBetween(this.config.minLevelQuantity, this.config.maxLevelQuantity);
+  }
+
+  /**
+   * Consumes the opposite side, one print per price level.
+   *
+   * `quantity` caps the size; `limitPrice` caps how far the fill may walk — a buy
+   * stops at the first ask priced at or above the limit. Exactly one of the two
+   * is given.
+   */
+  #fill(
+    book: OrderBook,
+    sink: DomainTrade[],
+    side: Side,
+    quantity: bigint | null,
+    limitPrice: bigint | null,
+    timestamp: number,
+    allocateTradeId: () => bigint,
+  ): void {
+    const opposite: BookSide = side === 'buy' ? 'ask' : 'bid';
+    let remaining = quantity;
+
+    for (const price of book.prices(opposite)) {
+      if (remaining !== null && remaining <= 0n) break;
+      if (limitPrice !== null) {
+        if (side === 'buy' && price >= limitPrice) break;
+        if (side === 'sell' && price <= limitPrice) break;
+      }
+
+      const available = book.quantityAt(opposite, price);
+      if (available <= 0n) continue;
+      const taken = remaining === null ? available : minBigInt(available, remaining);
+
+      book.addQuantity(opposite, price, -taken);
+      if (remaining !== null) remaining -= taken;
+
+      sink.push({
+        symbol: this.config.symbol,
+        tradeId: allocateTradeId(),
+        timestamp,
+        side,
+        price,
+        quantity: taken,
+      });
+    }
+  }
+
+  /** New limit orders and cancellations, always at or outside the current best. */
+  #churn(book: OrderBook): void {
+    for (let event = 0; event < this.config.churnEvents; event += 1) {
+      const side: BookSide = this.#prng.nextBoolean() ? 'bid' : 'ask';
+      const prices = book.prices(side);
+      if (prices.length === 0) continue;
+
+      const price = prices[this.#prng.nextIntBetween(0, prices.length - 1)];
+      if (price === undefined) continue;
+
+      if (this.#prng.nextFloat() < 0.6) {
+        // New limit order: adds liquidity to an existing level.
+        book.addQuantity(side, price, this.#randomLevelQuantity() / 4n);
+      } else {
+        // Cancellation or resize: keeps 0–75% of what was resting there.
+        const keptPercent = this.#prng.nextBigIntBetween(0n, 75n);
+        book.setLevel(side, price, (book.quantityAt(side, price) * keptPercent) / 100n);
+      }
+    }
+  }
+
+  /**
+   * Re-quotes the top of book toward the fair value. Targets are clamped against
+   * the opposite side, so the book can never cross: `bestBid < bestAsk` holds by
+   * construction, not by luck.
+   */
+  #requote(book: OrderBook, desiredBid: bigint, desiredAsk: bigint): void {
+    const { levelSpacing } = this.config;
+
+    const bestAsk = book.bestAsk();
+    const bidTarget =
+      bestAsk === undefined ? desiredBid : minBigInt(desiredBid, bestAsk - levelSpacing);
+    if (bidTarget > 0n && book.quantityAt('bid', bidTarget) === 0n) {
+      book.setLevel('bid', bidTarget, this.#randomLevelQuantity());
+    }
+
+    const bestBid = book.bestBid();
+    const askTarget =
+      bestBid === undefined ? desiredAsk : maxBigInt(desiredAsk, bestBid + levelSpacing);
+    if (book.quantityAt('ask', askTarget) === 0n) {
+      book.setLevel('ask', askTarget, this.#randomLevelQuantity());
+    }
+  }
+
+  /**
+   * Refills each side back to `depth`, always **further from the mid** — the
+   * replenishment rule in docs/02-market-domain.md §6. Levels further out are
+   * larger, which is what gives the cumulative depth bars their shape.
+   */
+  #replenish(book: OrderBook, desiredBid: bigint, desiredAsk: bigint): void {
+    const { levelSpacing } = this.config;
+
+    for (const side of ['bid', 'ask'] as const) {
+      const step = side === 'bid' ? -levelSpacing : levelSpacing;
+      const prices = book.prices(side);
+      let edge = prices[prices.length - 1];
+      if (edge === undefined) edge = (side === 'bid' ? desiredBid : desiredAsk) - step;
+
+      let guard = book.depth * 2;
+      while (book.size(side) < book.depth && guard > 0) {
+        guard -= 1;
+        edge += step;
+        if (edge <= 0n) break;
+        const distance = book.size(side);
+        const scale = 1n + BigInt(Math.floor(distance / 8));
+        book.setLevel(side, edge, this.#randomLevelQuantity() * scale);
+      }
+    }
+  }
+}
