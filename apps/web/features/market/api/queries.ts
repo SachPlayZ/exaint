@@ -2,7 +2,7 @@
 
 import type { Interval } from '@repo/protocol';
 import { CANDLE_HISTORY_LIMIT_MAX } from '@repo/protocol';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { queryOptions, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { MarketsResponse, BookSnapshotResponse, CandleHistoryResponse } from '@repo/protocol';
 import { MarketRestClient } from './rest-client.js';
 import { queryKeys } from './query-keys.js';
@@ -47,9 +47,19 @@ export function useCandleHistory(
   interval: Interval,
   limit: number = CANDLE_HISTORY_LIMIT_MAX,
 ): UseQueryResult<CandleHistoryResponse> {
-  return useQuery({
+  return useQuery(candleHistoryQueryOptions(client, symbol, interval, limit));
+}
+
+export function candleHistoryQueryOptions(
+  client: MarketRestClient,
+  symbol: string,
+  interval: Interval,
+  limit: number = CANDLE_HISTORY_LIMIT_MAX,
+) {
+  return queryOptions({
     queryKey: queryKeys.candles(symbol, interval, limit),
     queryFn: ({ signal }) => client.fetchCandles(symbol, interval, limit, signal),
-    staleTime: Number.POSITIVE_INFINITY,
+    // Switching back to a cached scope still needs the latest canonical history.
+    staleTime: 0,
   });
 }

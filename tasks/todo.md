@@ -4,13 +4,43 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P9 (not started). P0–P8 complete — the whole backend, the React-free frontend
-networking layer, and the per-symbol order-book synchroniser; 291 passing tests. All three
-invariants now have passing tests on both sides of the wire. See § Review.
+**Current phase:** P10 (not started). P0–P9 complete — the backend, React-free frontend networking,
+per-symbol order-book synchronisation, and the imperative chart pipeline; 300 passing tests. All
+three invariants have passing tests on both sides of the wire. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
 [`../PLAN.md` § Decisions](../PLAN.md#decisions).
+
+## Active plan — P9
+
+### Plan
+
+- [x] Add Lightweight Charts 5.2 and an imperative `CandlestickChartAdapter`
+- [x] Add candle merge/history controller with response tags, abort, and generation guards
+- [x] Add symbol/interval selection controller with subscribe-before-unsubscribe and per-symbol sync
+- [x] Add T5/T6 race, merge, adapter, and subscription-lifecycle tests
+- [x] Update P9 progress and review evidence
+
+### Files likely touched
+
+- `apps/web/package.json`, `pnpm-lock.yaml`
+- `apps/web/features/market/chart/*`
+- `apps/web/tests/chart/*`
+- `tasks/todo.md`
+
+### Verification
+
+- [x] `pnpm --filter @repo/web test`
+- [x] `pnpm lint`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [x] `pnpm build`
+- [x] inspect `git diff` and confirm only P9 files changed
+
+### Unresolved questions
+
+- None.
 
 ---
 
@@ -114,13 +144,13 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P9 — Chart
 
-- [ ] `CandlestickChartAdapter` with explicit dispose on unmount and every switch
-- [ ] symbol switching: subscribe-before-unsubscribe, per-symbol sync, `tickSize` formatting
-- [ ] interval switching: query key + AbortSignal + response validation + generation id
-- [ ] ignore WS frames for a non-selected symbol or interval
-- [ ] history/realtime merge, dedupe by `symbol + interval + candleStart`, higher `lastTradeId` wins
-- [ ] crosshair, hover OHLCV, pan, zoom
-- [ ] **Gate:** T5 + T6 pass; no chart update path goes through React state; exactly one
+- [x] `CandlestickChartAdapter` with explicit dispose on unmount and every switch
+- [x] symbol switching: subscribe-before-unsubscribe, per-symbol sync, `tickSize` formatting
+- [x] interval switching: query key + AbortSignal + response validation + generation id
+- [x] ignore WS frames for a non-selected symbol or interval
+- [x] history/realtime merge, dedupe by `symbol + interval + candleStart`, higher `lastTradeId` wins
+- [x] crosshair, hover OHLCV, pan, zoom
+- [x] **Gate:** T5 + T6 pass; no chart update path goes through React state; exactly one
       subscription left after a switch
 
 ## P10 — UI + debug panel
@@ -578,3 +608,28 @@ run. The drain now applies the same duplicate rule as the live path.
   returns `ignored-symbol` for a symbol nothing is tracking.
 
 **Still open.** Nothing. P9 wires this into the chart and the symbol-switch race.
+
+### P9 — Chart (complete)
+
+**What changed.** Added Lightweight Charts 5.2 and a React-free chart pipeline under
+`apps/web/features/market/chart/`: the imperative adapter owns the chart, series, crosshair, price
+format, resize and disposal handles; the history controller buffers live candles during REST
+fetches, merges by `(symbol, interval, startTime)`, and applies only the higher numeric
+`lastTradeId`; the selection controller coordinates subscribe-before-unsubscribe, per-symbol book
+sync, interval changes, and late-response rejection. Candle query options now expose the existing
+symbol+interval key and TanStack Query `AbortSignal` path; the browser composition root joins that
+source to the socket, book registry, real adapter, and teardown callbacks for P10 to mount.
+
+**Verified.** 300 tests green (58 protocol, 177 api, 65 web), `lint`/`typecheck`/`build` clean.
+- **T5:** delayed `1m`, then `5s`; the old signal aborts, the late `1m` response is ignored, and the
+  adapter receives only `5s` data.
+- **T6:** delayed `SOL-USD`, then `HYPE-USD`; HYPE snapshot/history win, SOL cannot mutate chart or
+  book, subscribe HYPE occurs before unsubscribe SOL, and exactly one subscription remains.
+- Live candle batches are buffered during history, sorted, deduplicated with numeric ids, then sent
+  through `series.update()` without React state. Empty history is valid `setData([])`.
+- An adapter test proves tick precision (`0.1000` → 1 decimal), chart-boundary number conversion,
+  crosshair/hover data, historical updates, resize, and idempotent disposal.
+- Failed replacement history resumes the still-visible active chart instead of buffering forever;
+  a failed replacement snapshot cannot leak the previous symbol subscription.
+
+**Still open.** P10 mounts the adapter in the terminal UI and adds the debounced `ResizeObserver`.
