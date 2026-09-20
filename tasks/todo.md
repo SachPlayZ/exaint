@@ -4,7 +4,8 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P0 (not started) — documentation complete, no code yet.
+**Current phase:** P1 (not started). P0 complete — monorepo installs, lints, typechecks, tests
+and builds; see § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -14,15 +15,15 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P0 — Scaffold
 
-- [ ] `pnpm-workspace.yaml`, `turbo.json`, root `package.json` with the standard scripts
-- [ ] `apps/web` — Next.js 16.3.x, App Router, TS strict
-- [ ] `apps/api` — Fastify + TS
-- [ ] `packages/protocol` — empty but buildable, importable as `@repo/protocol`
-- [ ] `tsconfig.base.json` — `strict`, `noUncheckedIndexedAccess`
-- [ ] ESLint + Prettier + Vitest config
-- [ ] `.env.example` for both apps
-- [ ] GitHub Actions PR workflow: install → lint → typecheck → test → build
-- [ ] **Gate:** clean clone runs `pnpm install && pnpm lint && pnpm typecheck && pnpm build`
+- [x] `pnpm-workspace.yaml`, `turbo.json`, root `package.json` with the standard scripts
+- [x] `apps/web` — Next.js 16.3.5, App Router, TS strict
+- [x] `apps/api` — Fastify 5 + TS
+- [x] `packages/protocol` — empty but buildable, importable as `@repo/protocol`
+- [x] `tsconfig.base.json` — `strict`, `noUncheckedIndexedAccess`
+- [x] ESLint + Prettier + Vitest config
+- [x] `.env.example` for both apps
+- [x] GitHub Actions PR workflow: install → lint → typecheck → test → build
+- [x] **Gate:** clean clone runs `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build`
 
 ## P1 — Protocol contracts
 
@@ -169,4 +170,31 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## Review
 
-*(Filled at the end of each phase: what changed, what was verified, what is still open.)*
+### P0 — Scaffold (complete)
+
+**What changed.** pnpm workspace (`apps/*`, `packages/*`) driven by Turborepo. Three packages:
+`@repo/api` (Fastify 5, `tsx watch` dev, `tsc` build, no routes — P4 owns those), `@repo/web`
+(Next.js 16.3.5 App Router, React 19, Tailwind v4), `@repo/protocol` (buildable, exports
+`PROTOCOL_VERSION`; the Zod schemas land in P1). Shared `tsconfig.base.json` with `strict` and
+`noUncheckedIndexedAccess`; shared flat ESLint config at the repo root that every package
+re-exports; Prettier over code and config only. `.env.example` for both apps, mirroring
+`docs/06-ops-deploy.md §3`. GitHub Actions PR workflow: install → lint → typecheck → test → build
+on Node 24.
+
+**Verified.** From a clean clone of the committed tree: `pnpm install` → `pnpm lint` →
+`pnpm typecheck` → `pnpm test` (3 tests) → `pnpm build` all exit 0. `pnpm dev:api` listens on
+:8080 and logs JSON lines; `pnpm dev:web` serves :3000 with `@repo/protocol` resolving through the
+workspace link.
+
+**Deviations from PLAN.md, and why.**
+- ESLint pinned to 9.x, not 10.x: `eslint-plugin-import` and `eslint-plugin-react`, both
+  transitive deps of `eslint-config-next@16.3.5`, do not yet declare ESLint 10 support.
+- TypeScript pinned to 5.9.x, not 7.x: `typescript-eslint@8` peer-requires `<6.1.0`.
+- `engines.node` is `>=22.12.0`; Docker and CI still run Node 24
+  (`docs/06-ops-deploy.md §4`).
+
+**Still open.**
+- Type-aware linting and the dependency-direction boundary rule promised in `AGENTS.md §5` —
+  deferred until there is real code for them to constrain.
+- `pnpm test:e2e` is wired as a Turbo task but no package defines it yet; Playwright lands in P12.
+- `docker-compose.yml`, the Dockerfile, and the `main`-branch deploy pipeline are P12.

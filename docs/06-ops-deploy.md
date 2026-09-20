@@ -101,6 +101,8 @@ Additional backend knobs introduced during the build (record defaults here as th
 | `RATE_LIMIT_STRIKES` | `3` | `RATE_LIMITED` responses within 10 s before close `4429` |
 | `MAX_SUBSCRIPTIONS_PER_CONN` | `5` | One per symbol |
 | `MAX_FRAME_BYTES` | `8192` | Inbound frame cap |
+| `HOST` | `0.0.0.0` | Listen address; `0.0.0.0` so container port mapping works |
+| `LOG_LEVEL` | `info` | Pino level for the structured JSON log lines in §5 |
 
 Per-tier delivery cadences (`100/200`, `500/500`, `2000/2000` ms) are constants, not env vars —
 they are protocol behaviour that tests assert against, not deployment tuning.
@@ -130,6 +132,10 @@ production dependencies only
 
 Healthcheck hits `/healthz`. `docker-compose.yml` runs api + web locally for anyone who does not
 want pnpm on their machine.
+
+The image and CI both run Node 24. The repo's `engines.node` is `>=22.12.0` rather than `>=24`
+so a developer on the previous LTS can still run `pnpm dev`; nothing in the codebase depends on
+a Node 24-only API.
 
 ---
 
