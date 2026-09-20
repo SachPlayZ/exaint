@@ -41,6 +41,8 @@ export interface SocketEvents {
   latency: { readonly rttMs: number; readonly jitterMs: number };
   /** The socket went away; `code` is the close status the server sent. */
   closed: { readonly code: number; readonly reason: string };
+  /** Browser paint lifecycle. Market models keep ingesting while hidden. */
+  visibility: { readonly hidden: boolean; readonly hiddenMs: number };
   /**
    * Everything subscribed must be rebuilt from a fresh snapshot: a new
    * connection, a backpressure close, or a long hidden tab.
@@ -66,14 +68,21 @@ export interface TimerApi {
   clearInterval(handle: number): void;
 }
 
+export interface VisibilitySource {
+  readonly hidden: boolean;
+  addEventListener(type: 'visibilitychange', listener: () => void): void;
+  removeEventListener(type: 'visibilitychange', listener: () => void): void;
+}
+
 export interface MarketSocketOptions {
   readonly wsUrl: string;
-  readonly fetchTicket: () => Promise<{ ticket: string }>;
+  readonly fetchTicket: (signal: AbortSignal) => Promise<{ ticket: string }>;
   readonly createSocket: (url: string) => WebSocketLike;
   /** Monotonic, for durations. `performance.now`, never `Date.now`. */
   readonly now?: () => number;
   readonly timers?: TimerApi;
   readonly random?: () => number;
+  readonly visibility?: VisibilitySource;
   readonly onLog?: (event: string, detail: Record<string, unknown>) => void;
 }
 

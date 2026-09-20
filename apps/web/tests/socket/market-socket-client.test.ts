@@ -10,9 +10,10 @@ import {
   MarketSocketClient,
   NETWORK_REPORT_INTERVAL_MS,
   PING_INTERVAL_MS,
+  VISIBILITY_HARD_REFRESH_MS,
 } from '../../features/market/socket/market-socket-client.js';
-import type { ConnectionState } from '../../features/market/socket/types.js';
-import { FakeSocket, FakeTimers, flush } from './fakes.js';
+import type { ConnectionState, VisibilitySource } from '../../features/market/socket/types.js';
+import { FakeSocket, FakeTimers, FakeVisibility, flush } from './fakes.js';
 
 const MARKET: MarketSummary = {
   symbol: 'BTC-USD',
@@ -36,16 +37,18 @@ interface Harness {
   readonly timers: FakeTimers;
   readonly sockets: FakeSocket[];
   readonly tickets: string[];
+  readonly ticketSignals: AbortSignal[];
   readonly states: ConnectionState[];
   failTicket: boolean;
   /** The socket the client is currently using. */
   current(): FakeSocket;
 }
 
-function harness(options: { random?: () => number } = {}): Harness {
+function harness(options: { random?: () => number; visibility?: VisibilitySource } = {}): Harness {
   const timers = new FakeTimers(1_000);
   const sockets: FakeSocket[] = [];
   const tickets: string[] = [];
+  const ticketSignals: AbortSignal[] = [];
   const states: ConnectionState[] = [];
   let counter = 0;
 
@@ -54,6 +57,7 @@ function harness(options: { random?: () => number } = {}): Harness {
     timers,
     sockets,
     tickets,
+    ticketSignals,
     states,
     current(): FakeSocket {
       const socket = sockets[sockets.length - 1];
@@ -62,7 +66,8 @@ function harness(options: { random?: () => number } = {}): Harness {
     },
     client: new MarketSocketClient({
       wsUrl: 'ws://api.test/v1/ws',
-      fetchTicket: async () => {
+      fetchTicket: async (signal) => {
+        ticketSignals.push(signal);
         if (self.failTicket) throw new Error('backend down');
         counter += 1;
         const ticket = `ticket-${counter}`;
@@ -77,6 +82,7 @@ function harness(options: { random?: () => number } = {}): Harness {
       timers,
       now: timers.now,
       random: options.random ?? (() => 0.5),
+      ...(options.visibility === undefined ? {} : { visibility: options.visibility }),
     }),
   };
   self.client.events.on('state', ({ state }) => states.push(state));
@@ -382,6 +388,46 @@ describe('latency measurement (docs/03-adaptive-delivery.md §3–§4)', () => {
   });
 });
 
+describe('browser visibility (docs/04-frontend.md §12)', () => {
+  it('keeps the socket alive and resumes normally after less than 30 seconds', async () => {
+    const visibility = new FakeVisibility();
+    const h = harness({ visibility });
+    const socket = await bringUp(h);
+    const events: { readonly hidden: boolean; readonly hiddenMs: number }[] = [];
+    const resyncs: string[] = [];
+    h.client.events.on('visibility', (event) => events.push(event));
+    h.client.events.on('resync', ({ reason }) => resyncs.push(reason));
+    const pingsBefore = socket.framesOfType('ping').length;
+
+    visibility.setHidden(true);
+    h.timers.advance(VISIBILITY_HARD_REFRESH_MS - 1);
+    visibility.setHidden(false);
+
+    expect(events).toEqual([
+      { hidden: true, hiddenMs: 0 },
+      { hidden: false, hiddenMs: VISIBILITY_HARD_REFRESH_MS - 1 },
+    ]);
+    expect(resyncs).toEqual([]);
+    expect(socket.framesOfType('ping')).toHaveLength(pingsBefore + 15);
+    expect(h.sockets).toHaveLength(1);
+  });
+
+  it('requests a selected-symbol hard refresh after more than 30 seconds', async () => {
+    const visibility = new FakeVisibility();
+    const h = harness({ visibility });
+    await bringUp(h);
+    const reasons: string[] = [];
+    h.client.events.on('resync', ({ reason }) => reasons.push(reason));
+
+    visibility.setHidden(true);
+    h.timers.advance(VISIBILITY_HARD_REFRESH_MS + 1);
+    visibility.setHidden(false);
+
+    expect(reasons).toEqual(['visibility']);
+    expect(h.sockets).toHaveLength(1);
+  });
+});
+
 describe('frame handling', () => {
   it('validates every inbound frame and ignores what does not parse', async () => {
     const h = harness();
@@ -425,6 +471,10 @@ describe('teardown (docs/04-frontend.md §14)', () => {
     expect(h.timers.pending).toBe(0);
     expect(socket.closedWith).toMatchObject({ code: 1000 });
     expect(h.client.state).toBe('STALE');
+    expect(socket.onopen).toBeNull();
+    expect(socket.onmessage).toBeNull();
+    expect(socket.onclose).toBeNull();
+    expect(socket.onerror).toBeNull();
 
     // A late close from the socket must not start a reconnect after disconnect.
     socket.serverClose(1006);
@@ -445,5 +495,42 @@ describe('teardown (docs/04-frontend.md §14)', () => {
     socket.deliver({ type: 'error', code: 'RATE_LIMITED' });
     expect(first).toEqual([]);
     expect(second).toEqual(['RATE_LIMITED']);
+  });
+
+  it('owns one visibility listener across reconnects and removes it on disconnect', async () => {
+    const visibility = new FakeVisibility();
+    const h = harness({ visibility });
+    await bringUp(h);
+    expect(visibility.listenerCount).toBe(1);
+
+    h.current().serverClose(1006);
+    h.timers.advance(2_000);
+    await flush();
+    h.current().open();
+    h.current().deliver(hello('conn-2'));
+    expect(visibility.listenerCount).toBe(1);
+
+    h.client.disconnect();
+    expect(visibility.listenerCount).toBe(0);
+  });
+
+  it('aborts an in-flight ticket request on disconnect', () => {
+    const visibility = new FakeVisibility();
+    let signal: AbortSignal | undefined;
+    const client = new MarketSocketClient({
+      wsUrl: 'ws://api.test/v1/ws',
+      fetchTicket: (requestSignal) => {
+        signal = requestSignal;
+        return new Promise(() => undefined);
+      },
+      createSocket: (url) => new FakeSocket(url),
+      visibility,
+    });
+
+    client.connect();
+    expect(signal?.aborted).toBe(false);
+    client.disconnect();
+    expect(signal?.aborted).toBe(true);
+    expect(visibility.listenerCount).toBe(0);
   });
 });

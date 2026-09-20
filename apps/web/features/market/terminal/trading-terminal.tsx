@@ -8,6 +8,7 @@ import { ChartPanel } from '../components/chart-panel';
 import { DebugDrawer } from '../components/debug-drawer';
 import { OrderBookPanel } from '../components/order-book-panel';
 import { RecentTrades } from '../components/recent-trades';
+import { StaleBanner } from '../components/stale-banner';
 import { TerminalHeader } from '../components/terminal-header';
 import { Watchlist } from '../components/watchlist';
 import { TerminalRuntime, type TerminalRuntimeSnapshot } from '../runtime/terminal-runtime';
@@ -93,9 +94,10 @@ export function TradingTerminal() {
     runtime?.selectInterval(interval);
   };
   const setOverride = (tier: Tier | null): void => runtime?.setTierOverride(tier);
+  const stale = connection === 'STALE' || connection === 'RECONNECTING' || connection === 'ERROR';
 
   return (
-    <main className="terminal-shell">
+    <main className={`terminal-shell ${stale ? 'terminal-stale' : ''}`}>
       <TerminalHeader
         connection={connection}
         effectiveTier={effectiveTier}
@@ -104,6 +106,9 @@ export function TradingTerminal() {
         rttMs={rttMs}
         sessionChangeBps={snapshot?.sessionChangeBps ?? null}
       />
+      {stale ? (
+        <StaleBanner ageMs={snapshot?.lastLiveAgeMs ?? null} connection={connection} />
+      ) : null}
       <Watchlist markets={markets} onSelect={selectMarket} selectedSymbol={selectedSymbol} />
 
       <div className="terminal-grid">

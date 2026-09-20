@@ -29,6 +29,7 @@ export interface TerminalRuntimeSnapshot extends MarketUiSnapshot {
   readonly candleActualHz: number;
   readonly tradeActualHz: number;
   readonly waitingForCandles: boolean;
+  readonly lastLiveAgeMs: number | null;
 }
 
 function sessionChangeBps(latest: string | null, baseline: string | null): bigint | null {
@@ -77,7 +78,7 @@ export class TerminalRuntime {
     this.#tradeRate = new RollingRate(now);
     this.socket = new MarketSocketClient({
       wsUrl: options.wsUrl,
-      fetchTicket: () => options.restClient.fetchTicket(),
+      fetchTicket: (signal) => options.restClient.fetchTicket(signal),
       createSocket: (url) => new BrowserWebSocket(url),
       now,
     });
@@ -120,13 +121,7 @@ export class TerminalRuntime {
     this.#hasCandle = false;
     this.#publisher.markDirty();
     if (this.#helloReceived) {
-      void this.pipeline.selectMarket(market, this.#interval).then(
-        () => {
-          this.#hasCandle = this.pipeline.hasCandles;
-          this.#publisher.markDirty();
-        },
-        () => this.#publisher.markDirty(),
-      );
+      this.#trackSelection(this.pipeline.selectMarket(market, this.#interval));
     }
   }
 
@@ -136,13 +131,7 @@ export class TerminalRuntime {
     this.#hasCandle = false;
     this.#publisher.markDirty();
     if (this.#helloReceived) {
-      void this.pipeline.selectInterval(interval).then(
-        () => {
-          this.#hasCandle = this.pipeline.hasCandles;
-          this.#publisher.markDirty();
-        },
-        () => this.#publisher.markDirty(),
-      );
+      this.#trackSelection(this.pipeline.selectInterval(interval));
     }
   }
 
@@ -169,6 +158,7 @@ export class TerminalRuntime {
         this.#publisher.markDirty();
       }),
       this.socket.events.on('hello', (frame) => {
+        const initialHello = !this.#helloReceived;
         this.#helloReceived = true;
         store.setConnectionId(frame.connectionId);
         store.setTier({
@@ -177,13 +167,9 @@ export class TerminalRuntime {
           effectiveTier: frame.tier,
           ...TIER_CADENCE_MS[frame.tier],
         });
-        void this.pipeline.selectMarket(this.#market, this.#interval).then(
-          () => {
-            this.#hasCandle = this.pipeline.hasCandles;
-            this.#publisher.markDirty();
-          },
-          () => this.#publisher.markDirty(),
-        );
+        if (initialHello) {
+          this.#trackSelection(this.pipeline.selectMarket(this.#market, this.#interval));
+        }
       }),
       this.socket.events.on('latency', ({ rttMs, jitterMs }) => {
         store.setLatency(rttMs, jitterMs);
@@ -211,6 +197,17 @@ export class TerminalRuntime {
       this.socket.events.on('book.delta', (frame) => {
         if (frame.symbol === this.#market.symbol) this.#publisher.markDirty();
       }),
+      this.socket.events.on('visibility', ({ hidden }) => {
+        this.pipeline.setRenderingPaused(hidden);
+        this.#publisher.setPaused(hidden);
+      }),
+      this.socket.events.on('resync', ({ reason }) => {
+        if (reason === 'backpressure') return;
+        this.#hasCandle = false;
+        this.#publisher.markDirty();
+        this.#trackSelection(this.pipeline.refreshSelected());
+      }),
+      this.pipeline.subscribeBookChange(() => this.#publisher.markDirty()),
     ];
   }
 
@@ -231,6 +228,17 @@ export class TerminalRuntime {
       candleActualHz: this.#candleRate.hertz(),
       tradeActualHz: this.#tradeRate.hertz(),
       waitingForCandles: !this.#hasCandle,
+      lastLiveAgeMs: this.socket.ageMs(),
     });
+  }
+
+  #trackSelection(selection: Promise<'applied' | 'superseded'>): void {
+    void selection.then(
+      (result) => {
+        if (result === 'applied') this.#hasCandle = this.pipeline.hasCandles;
+        this.#publisher.markDirty();
+      },
+      () => this.#publisher.markDirty(),
+    );
   }
 }

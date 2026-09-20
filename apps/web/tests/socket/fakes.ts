@@ -1,5 +1,9 @@
 import type { ServerFrame } from '@repo/protocol';
-import type { TimerApi, WebSocketLike } from '../../features/market/socket/types.js';
+import type {
+  TimerApi,
+  VisibilitySource,
+  WebSocketLike,
+} from '../../features/market/socket/types.js';
 
 /** A socket the test drives by hand. No network, no browser. */
 export class FakeSocket implements WebSocketLike {
@@ -117,6 +121,28 @@ export class FakeTimers implements TimerApi {
       timer.handler();
     }
     this.#now = target;
+  }
+}
+
+export class FakeVisibility implements VisibilitySource {
+  hidden = false;
+  readonly #listeners = new Set<() => void>();
+
+  get listenerCount(): number {
+    return this.#listeners.size;
+  }
+
+  addEventListener(_type: 'visibilitychange', listener: () => void): void {
+    this.#listeners.add(listener);
+  }
+
+  removeEventListener(_type: 'visibilitychange', listener: () => void): void {
+    this.#listeners.delete(listener);
+  }
+
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    for (const listener of [...this.#listeners]) listener();
   }
 }
 

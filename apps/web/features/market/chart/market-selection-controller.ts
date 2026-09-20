@@ -74,39 +74,7 @@ export class MarketSelectionController {
 
     // Subscribe B before any path can unsubscribe A (docs/04 §6).
     this.#socket.subscribe(market.symbol, MARKET_CHANNELS, interval);
-    const synchronizer = this.#books.for(market.symbol);
-    const bookGeneration = synchronizer.beginSync();
-
-    this.#snapshotAbort?.abort();
-    const snapshotAbort = new AbortController();
-    this.#snapshotAbort = snapshotAbort;
-    const snapshotResult = this.#snapshots
-      .fetchBookSnapshot(market.symbol, snapshotAbort.signal)
-      .then((snapshot) => {
-        if (generation !== this.#generation || snapshot.symbol !== market.symbol) return false;
-        return synchronizer.applySnapshot(snapshot, bookGeneration);
-      })
-      .then(
-        (applied) => ({ ok: true as const, applied }),
-        (error: unknown) => ({ ok: false as const, error }),
-      );
-
-    const historyRequest = this.#history.select({
-      symbol: market.symbol,
-      interval,
-      tickSize: market.tickSize,
-    });
-    const historyResult = await historyRequest;
-    if (generation !== this.#generation || historyResult !== 'applied') return 'superseded';
-    this.#removeInactiveSubscriptions(market.symbol);
-
-    const snapshot = await snapshotResult;
-    if (!snapshot.ok) {
-      if (generation !== this.#generation || isAbortError(snapshot.error)) return 'superseded';
-      throw snapshot.error;
-    }
-    if (!snapshot.applied) return 'superseded';
-    return 'applied';
+    return this.#loadSelected(market, interval, generation, true);
   }
 
   async selectInterval(interval: Interval): Promise<HistorySelectionResult> {
@@ -125,6 +93,33 @@ export class MarketSelectionController {
     return result;
   }
 
+  /** Fresh history and book for the current scope, without changing subscriptions. */
+  refreshSelected(): Promise<HistorySelectionResult> {
+    const market = this.#market;
+    const interval = this.#interval;
+    if (market === null || interval === null) return Promise.resolve('superseded');
+    const generation = ++this.#generation;
+    return this.#loadSelected(market, interval, generation, false);
+  }
+
+  /** I1 recovery: rebuild only the selected book after a detected sequence gap. */
+  async refreshBook(): Promise<boolean> {
+    const market = this.#market;
+    if (market === null) return false;
+    const generation = this.#generation;
+    const result = await this.#requestBookSnapshot(market, generation);
+    if (!result.ok) {
+      if (generation !== this.#generation || isAbortError(result.error)) return false;
+      throw result.error;
+    }
+    if (result.outcome === 'retry') return this.refreshBook();
+    return result.outcome === 'applied';
+  }
+
+  setRenderingPaused(paused: boolean): void {
+    this.#history.setRenderingPaused(paused);
+  }
+
   onCandles(frame: CandlesUpdateFrame): void {
     if (frame.symbol !== this.#market?.symbol || frame.interval !== this.#interval) return;
     this.#history.onCandles(frame);
@@ -132,7 +127,9 @@ export class MarketSelectionController {
 
   onBookDelta(delta: BookDeltaFrame): void {
     if (delta.symbol !== this.#market?.symbol) return;
-    this.#books.route(delta);
+    if (this.#books.route(delta) === 'resync-required') {
+      void this.refreshBook().catch(() => undefined);
+    }
   }
 
   dispose(): void {
@@ -154,5 +151,60 @@ export class MarketSelectionController {
       this.#socket.unsubscribe(subscription.symbol);
       this.#books.remove(subscription.symbol);
     }
+  }
+
+  async #loadSelected(
+    market: MarketSummary,
+    interval: Interval,
+    generation: number,
+    removeInactive: boolean,
+  ): Promise<HistorySelectionResult> {
+    const snapshotResult = this.#requestBookSnapshot(market, generation);
+    const historyResult = await this.#history.select({
+      symbol: market.symbol,
+      interval,
+      tickSize: market.tickSize,
+    });
+    if (generation !== this.#generation || historyResult !== 'applied') return 'superseded';
+    if (removeInactive) this.#removeInactiveSubscriptions(market.symbol);
+
+    const snapshot = await snapshotResult;
+    if (!snapshot.ok) {
+      if (generation !== this.#generation || isAbortError(snapshot.error)) return 'superseded';
+      throw snapshot.error;
+    }
+    if (snapshot.outcome === 'retry') {
+      return (await this.refreshBook()) ? 'applied' : 'superseded';
+    }
+    return snapshot.outcome === 'applied' ? 'applied' : 'superseded';
+  }
+
+  #requestBookSnapshot(
+    market: MarketSummary,
+    generation: number,
+  ): Promise<
+    | { readonly ok: true; readonly outcome: 'applied' | 'superseded' | 'retry' }
+    | { readonly ok: false; readonly error: unknown }
+  > {
+    const synchronizer = this.#books.for(market.symbol);
+    const bookGeneration = synchronizer.beginSync();
+    this.#snapshotAbort?.abort();
+    const snapshotAbort = new AbortController();
+    this.#snapshotAbort = snapshotAbort;
+    return this.#snapshots
+      .fetchBookSnapshot(market.symbol, snapshotAbort.signal)
+      .then((snapshot) => {
+        if (generation !== this.#generation || snapshot.symbol !== market.symbol) {
+          return 'superseded' as const;
+        }
+        if (synchronizer.applySnapshot(snapshot, bookGeneration)) return 'applied' as const;
+        return synchronizer.generation === bookGeneration
+          ? ('retry' as const)
+          : ('superseded' as const);
+      })
+      .then(
+        (outcome) => ({ ok: true as const, outcome }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
   }
 }

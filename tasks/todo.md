@@ -4,33 +4,35 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P11 (not started). P0–P10 complete — the backend, React-free frontend networking,
-per-symbol order-book synchronisation, imperative chart pipeline, and responsive terminal UI; 319
-passing tests. All three invariants have passing tests on both sides of the wire. See § Review.
+**Current phase:** P12 (not started). P0–P11 complete — the backend, React-free frontend networking,
+per-symbol order-book synchronisation, imperative chart pipeline, responsive terminal UI, and
+failure recovery; 336 passing tests. All three invariants have passing tests on both sides of the
+wire. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
 [`../PLAN.md` § Decisions](../PLAN.md#decisions).
 
-## Active plan — P10
+## Active plan — P11
 
 ### Plan
 
-- [x] Add browser socket adapter and rAF-published terminal runtime over P7–P9 models
-- [x] Build terminal shell: header, chart controls/readout, book, trades, debug drawer
-- [x] Add registry-driven watchlist drag/keyboard reorder with guarded persistence
-- [x] Implement ≥1280 / ≥768 / <768 layouts, 10+ levels/side, no page overflow
-- [x] Add pure/runtime tests for watchlist, trade caps/order, frame rates, and render scheduling
-- [x] Demonstrate 1280 / 768 / 375 layouts against the live API
-- [x] Update P10 progress and review evidence
+- [x] Add selected-symbol book resync and reconnect hard-refresh recovery
+- [x] Add visibility lifecycle: pause repaints, immediate wake ping, 30 s hard refresh
+- [x] Add stale-preserving disconnect UX with monotonic last-live age
+- [x] Complete failure matrix tests for every P11 case
+- [x] Audit and test timers, listeners, requests, observers, sockets, charts and synchronisers
+- [x] Prove zero leaks after 50 symbol switches, visibility cycle, disconnect and unmount
+- [x] Update P11 progress and review evidence
 
 ### Files likely touched
 
-- `apps/web/app/*`
+- `apps/web/features/market/socket/*`
+- `apps/web/features/market/chart/*`
 - `apps/web/features/market/runtime/*`
 - `apps/web/features/market/components/*`
-- `apps/web/features/market/watchlist/*`
-- `apps/web/tests/runtime/*`, `apps/web/tests/watchlist/*`
+- `apps/web/tests/socket/*`, `apps/web/tests/chart/*`, `apps/web/tests/runtime/*`
+- `docs/04-frontend.md`, `docs/05-testing.md`
 - `tasks/todo.md`
 
 ### Verification
@@ -40,8 +42,8 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [x] `pnpm typecheck`
 - [x] `pnpm test`
 - [x] `pnpm build`
-- [x] live browser check at 1280 / 768 / 375
-- [x] inspect `git diff` and confirm only P10 files changed
+- [x] live disconnect/reconnect and stale UX check
+- [x] inspect `git diff` and confirm only P11 files changed
 
 ### Unresolved questions
 
@@ -176,19 +178,19 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P11 — Failure handling
 
-- [ ] network failure
-- [ ] missing book event
-- [ ] invalid JSON
-- [ ] late history
-- [ ] late snapshot after a symbol switch
-- [ ] empty history (and empty book, empty trade list)
-- [ ] duplicate candle
-- [ ] expired ticket on reconnect
-- [ ] rate-limit strike close (4429)
-- [ ] hidden tab — under 30 s and over 30 s
-- [ ] backend restart
-- [ ] resource teardown audit vs `04 §14` table — timers, listeners, rAF, observers, sockets
-- [ ] **Gate:** each has its own passing automated test; no leaks after 50 symbol switches
+- [x] network failure
+- [x] missing book event
+- [x] invalid JSON
+- [x] late history
+- [x] late snapshot after a symbol switch
+- [x] empty history (and empty book, empty trade list)
+- [x] duplicate candle
+- [x] expired ticket on reconnect
+- [x] rate-limit strike close (4429)
+- [x] hidden tab — under 30 s and over 30 s
+- [x] backend restart
+- [x] resource teardown audit vs `04 §14` table — timers, listeners, rAF, observers, sockets
+- [x] **Gate:** each has its own passing automated test; no leaks after 50 symbol switches
 
 ## P12 — E2E, deploy, README, recording
 
@@ -663,3 +665,21 @@ than implying unavailable 24-hour data.
 
 **Still open.** P11 owns reconnect/resync recovery, visibility handling and the exhaustive failure
 and resource-teardown matrix.
+
+### P11 — Failure handling (complete)
+
+**What changed.** Reconnect and sequence-gap recovery now rebuild selected-symbol history and book
+without changing subscriptions or blanking the last known view. Hidden tabs keep ingesting data but
+pause chart and React publications; wake sends an immediate ping and a hide over 30 seconds performs
+a hard refresh. Ticket requests are abortable, stale socket callbacks are detached, and disconnect
+renders a monotonic-age `STALE` banner over preserved market data.
+
+**Verified.** 336 tests green (58 protocol, 177 api, 101 web), with dedicated cases for every P11
+failure. The teardown matrix proves zero timers/listeners/subscriptions/books after 50 symbol
+switches, a visibility cycle, disconnect and disposal. `lint`, `typecheck`, and `build` are clean.
+Live API termination preserved 24 book rows, 50 trades and 7 candles behind
+`RECONNECTING… LAST LIVE UPDATE 8.1S AGO`; restarting the API returned `LIVE` with a synchronized
+24-row book and no browser warnings/errors.
+
+**Still open.** P12 owns Playwright recovery, production packaging/deployment, README and demo
+recording.

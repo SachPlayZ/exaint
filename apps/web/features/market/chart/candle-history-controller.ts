@@ -43,6 +43,8 @@ export class CandleHistoryController {
   #activeScope: CandleScope | null = null;
   #activeSession: ChartSession | null = null;
   readonly #activeCandles = new Map<number, Candle>();
+  #renderingPaused = false;
+  #needsFullRender = false;
 
   constructor(source: CandleHistorySource, sessions: ChartSessionFactory) {
     this.#source = source;
@@ -55,6 +57,16 @@ export class CandleHistoryController {
 
   get hasCandles(): boolean {
     return this.#activeCandles.size > 0;
+  }
+
+  setRenderingPaused(paused: boolean): void {
+    if (paused === this.#renderingPaused) return;
+    this.#renderingPaused = paused;
+    if (paused || !this.#needsFullRender || this.#activeSession === null) return;
+    this.#activeSession.setData(
+      [...this.#activeCandles.values()].sort((left, right) => left.startTime - right.startTime),
+    );
+    this.#needsFullRender = false;
   }
 
   async select(scope: CandleScope): Promise<HistorySelectionResult> {
@@ -100,7 +112,8 @@ export class CandleHistoryController {
     this.#buffered = [];
     this.#activeCandles.clear();
     for (const candle of merged) this.#activeCandles.set(candle.startTime, candle);
-    nextSession.setData(merged);
+    if (this.#renderingPaused) this.#needsFullRender = true;
+    else nextSession.setData(merged);
     return 'applied';
   }
 
@@ -120,7 +133,8 @@ export class CandleHistoryController {
       const current = this.#activeCandles.get(candle.startTime);
       if (!isCandleNewer(candle, current)) continue;
       this.#activeCandles.set(candle.startTime, candle);
-      session.update(candle);
+      if (this.#renderingPaused) this.#needsFullRender = true;
+      else session.update(candle);
     }
   }
 
@@ -134,5 +148,6 @@ export class CandleHistoryController {
     this.#activeSession?.dispose();
     this.#activeSession = null;
     this.#activeScope = null;
+    this.#needsFullRender = false;
   }
 }

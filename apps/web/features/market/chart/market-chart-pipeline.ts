@@ -19,6 +19,7 @@ export class MarketChartPipeline {
   readonly books: OrderBookRegistry;
   readonly selection: MarketSelectionController;
   readonly #unsubscribe: readonly (() => void)[];
+  readonly #bookListeners = new Set<() => void>();
 
   constructor(options: {
     readonly container: HTMLElement;
@@ -30,6 +31,7 @@ export class MarketChartPipeline {
     this.books = new OrderBookRegistry(() => {
       if (this.books.allSynchronized()) options.socket.markSynchronized();
       else options.socket.markSyncing();
+      for (const listener of [...this.#bookListeners]) listener();
     });
     const sessions: ChartSessionFactory = {
       create: (scope) =>
@@ -65,8 +67,22 @@ export class MarketChartPipeline {
     return this.selection.hasCandles;
   }
 
+  refreshSelected(): Promise<HistorySelectionResult> {
+    return this.selection.refreshSelected();
+  }
+
+  setRenderingPaused(paused: boolean): void {
+    this.selection.setRenderingPaused(paused);
+  }
+
+  subscribeBookChange(listener: () => void): () => void {
+    this.#bookListeners.add(listener);
+    return () => this.#bookListeners.delete(listener);
+  }
+
   dispose(): void {
     for (const unsubscribe of this.#unsubscribe) unsubscribe();
+    this.#bookListeners.clear();
     this.selection.dispose();
   }
 }

@@ -85,4 +85,29 @@ describe('RafPublisher', () => {
     expect(value).toBe(1);
     expect(published).toEqual([]);
   });
+
+  it('keeps mutations while hidden and publishes one fresh snapshot on resume', () => {
+    const frames = new FakeAnimationFrames();
+    const published: number[] = [];
+    let value = 0;
+    const publisher = new RafPublisher({
+      createSnapshot: () => ({ value }),
+      publish: (snapshot) => published.push(snapshot.value),
+      scheduler: frames,
+    });
+
+    publisher.setPaused(true);
+    publisher.mutate(() => {
+      value = 1;
+    });
+    publisher.mutate(() => {
+      value = 2;
+    });
+    expect(frames.pending).toBe(0);
+
+    publisher.setPaused(false);
+    expect(frames.pending).toBe(1);
+    frames.flush();
+    expect(published).toEqual([2]);
+  });
 });

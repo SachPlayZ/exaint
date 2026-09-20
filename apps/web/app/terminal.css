@@ -29,6 +29,26 @@
   align-items: stretch;
 }
 
+.stale-banner {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ask);
+  border-block-start: 0;
+  background: rgba(255, 118, 95, 0.08);
+  color: var(--ask);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.terminal-stale .chart-panel,
+.terminal-stale .book-panel,
+.terminal-stale .trades-panel {
+  filter: saturate(0.55);
+}
+
 .brand-lockup,
 .market-tape,
 .live-cluster {

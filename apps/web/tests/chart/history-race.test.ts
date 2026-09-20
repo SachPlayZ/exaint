@@ -113,4 +113,56 @@ describe('T5 late history response', () => {
     });
     expect(sessions.created[0]?.session.updates).toEqual([live]);
   });
+
+  it('keeps ingesting while hidden without repainting, then renders once on wake', async () => {
+    const source = new DeferredHistorySource();
+    const sessions = new FakeChartSessionFactory();
+    const controller = new CandleHistoryController(source, sessions);
+    const selected = controller.select({ symbol: 'BTC-USD', interval: '1s', tickSize: '0.1000' });
+    const base = candle('BTC-USD', 1_700_000_000_000, '1');
+    source.requests[0]?.response.resolve(history('BTC-USD', '1s', [base]));
+    await selected;
+
+    controller.setRenderingPaused(true);
+    const live = candle('BTC-USD', base.startTime + 1_000, '2');
+    controller.onCandles({
+      type: 'candles.update',
+      symbol: 'BTC-USD',
+      interval: '1s',
+      candles: [live],
+    });
+    expect(sessions.created[0]?.session.updates).toEqual([]);
+
+    controller.setRenderingPaused(false);
+    expect(sessions.created[0]?.session.setDataCalls).toEqual([[base], [base, live]]);
+  });
+
+  it('accepts empty history, then live data, then a seamless real-history replacement', async () => {
+    const source = new DeferredHistorySource();
+    const sessions = new FakeChartSessionFactory();
+    const controller = new CandleHistoryController(source, sessions);
+    const empty = controller.select({ symbol: 'BTC-USD', interval: '1s', tickSize: '0.1000' });
+    source.requests[0]?.response.resolve(history('BTC-USD', '1s', []));
+    await empty;
+    expect(sessions.created[0]?.session.setDataCalls).toEqual([[]]);
+
+    const live = candle('BTC-USD', 1_700_000_000_000, '1');
+    controller.onCandles({
+      type: 'candles.update',
+      symbol: 'BTC-USD',
+      interval: '1s',
+      candles: [live],
+    });
+    expect(sessions.created[0]?.session.updates).toEqual([live]);
+
+    const replacement = controller.select({
+      symbol: 'BTC-USD',
+      interval: '1s',
+      tickSize: '0.1000',
+    });
+    source.requests[1]?.response.resolve(history('BTC-USD', '1s', [live]));
+    await replacement;
+    expect(sessions.created[0]?.session.disposeCalls).toBe(1);
+    expect(sessions.created[1]?.session.setDataCalls).toEqual([[live]]);
+  });
 });
