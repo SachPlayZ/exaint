@@ -4,8 +4,8 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P3 (not started). P0–P2 complete — scaffold, protocol contracts, and a
-deterministic five-symbol market domain; 107 passing tests. See § Review.
+**Current phase:** P4 (not started). P0–P3 complete — scaffold, protocol contracts, deterministic
+five-symbol market domain, and the canonical candle engine; 145 passing tests. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -49,12 +49,12 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P3 — Candle engine
 
-- [ ] `aggregator.ts` — 1s / 5s / 1m per symbol (15 total), fan-out within a symbol only
-- [ ] candle shape incl. `tradeCount`, `lastTradeId`
-- [ ] bucket boundary maths
-- [ ] ring-buffer history per interval (≥ 300 + headroom)
-- [ ] finalisation events
-- [ ] **Gate:** OHLCV tests incl. boundary + empty intervals; exact `bigint` volume
+- [x] `aggregator.ts` — 1s / 5s / 1m per symbol (15 total), fan-out within a symbol only
+- [x] candle shape incl. `tradeCount`, `lastTradeId`
+- [x] bucket boundary maths
+- [x] ring-buffer history per interval (360 = 300 + 20% headroom)
+- [x] finalisation events
+- [x] **Gate:** OHLCV tests incl. boundary + empty intervals; exact `bigint` volume
 
 ## P4 — REST API
 
@@ -293,3 +293,39 @@ Calibration`, together with the measured spreads and one-minute ranges the test 
   questions, to settle in P4/P5.
 - `MarketEngine` exposes a tick sink rather than a `MarketEventBus`; the bus lands when a transport
   needs it (P4/P5).
+
+### P3 — Candle engine (complete)
+
+**What changed.** `apps/api/src/market/candles/`: `candle.ts` (domain shape + bucket boundary),
+`ring-buffer.ts` (O(1) fixed-capacity history), `aggregator.ts` (one symbol, one interval),
+`symbol-candles.ts` (a symbol's three). `SymbolEngine` now owns a `SymbolCandleSet`, and
+`SymbolTickResult` carries `finalisedCandles` and `activeCandles`. No tier awareness anywhere in
+this layer.
+
+**Verified.** 145 tests green (57 protocol, 88 api), `lint`/`typecheck`/`build` clean.
+- `candle-engine.test.ts` runs the real five-symbol engine for two simulated minutes and compares
+  all 15 aggregators against an **independent fold of the raw trade stream** — same OHLCV, same
+  volume, same `tradeCount`, same `lastTradeId`, nothing invented and nothing lost.
+- Every finalised candle is emitted exactly once, per interval, in chronological order.
+- Volume exactness is a fast-check property over arbitrary quantity lists, plus a 10,000-trade case
+  that shows the `bigint` sum exact where the float accumulator has already drifted.
+- Boundary cases covered: single-trade candle, a trade landing exactly on a boundary, quiet-market
+  finalisation on the clock, and double-close protection.
+
+**Design decisions worth knowing.**
+- **An empty interval produces no candle.** A bucket with no trades is a gap in the series, never a
+  fabricated zero-volume bar — asserted directly.
+- **Buckets finalise on the clock, not only on the next trade.** `closeThrough(timestamp)` runs
+  every tick before the trades are folded, so a bucket that ends while the market is quiet still
+  closes. Without it a Minimal client could wait seconds for a candle that had already closed,
+  which is exactly the I2 failure P6 has to avoid.
+- **No `final` field on the domain candle.** Finality is a fact about the clock; the transport
+  states it on the wire so the client never infers it. Recorded in `docs/02-market-domain.md §8`
+  during P1.
+- `activeCandles` is emitted only on ticks that saw a trade, so the delivery layer is not handed an
+  unchanged active candle 20 times a second.
+- Ring-buffer capacity is `CANDLE_HISTORY_LIMIT_MAX * 1.2 = 360`, derived from the protocol
+  constant rather than typed in twice.
+
+**Still open.** Nothing new. The candle *delivery* rules — pending finalised queue, coalesced
+active slot, per-tier cadence — are P6, and deliberately live outside this engine.

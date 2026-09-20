@@ -1,4 +1,5 @@
 import type { MarketSymbol, Side } from '@repo/protocol';
+import type { DomainCandle } from './candles/candle.js';
 
 /**
  * Domain events. Values are `bigint` fixed-point — these are *not* wire types.
@@ -42,4 +43,11 @@ export interface SymbolTickResult {
   readonly trades: readonly DomainTrade[];
   /** `null` when nothing in the book changed — no change, no sequence burned. */
   readonly delta: DomainBookDelta | null;
+  /**
+   * Buckets that closed on this tick, across every interval. Delivery may pace
+   * these but must never drop one — that is what I2 costs.
+   */
+  readonly finalisedCandles: readonly DomainCandle[];
+  /** The open bucket per interval, present only on ticks that saw a trade. */
+  readonly activeCandles: readonly DomainCandle[];
 }
