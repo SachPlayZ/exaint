@@ -296,6 +296,10 @@ Fifteen aggregators total. A trade never touches another symbol's aggregators.
 `lastTradeId` is what makes two versions of the same candle comparable — the higher one wins during
 history/realtime merge. It is not decoration.
 
+On the wire the candle carries one extra field, `final` — `false` while the bucket is still open.
+The engine does not store it; finality is a fact about the clock, and the transport states it so the
+client never has to infer it ([`01-protocol.md §6`](./01-protocol.md#candlesupdate)).
+
 ### Bucket boundary
 
 ```ts

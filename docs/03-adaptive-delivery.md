@@ -79,23 +79,13 @@ send:
 
 Which produces, for a Minimal client:
 
-```json
-{
-  "type": "candles.update",
-  "candles": [
-    {
-      "start": 1789874704000,
-      "final": true,
-      "...": "..."
-    },
-    {
-      "start": 1789874705000,
-      "final": false,
-      "...": "..."
-    }
-  ]
-}
+```text
+candles.update
+  candle startTime 1789874704000   final true      ← closed while the client was waiting
+  candle startTime 1789874705000   final false     ← the current one
 ```
+
+Full frame shape: [`01-protocol.md §6`](./01-protocol.md#candlesupdate).
 
 The active-candle slot **coalesces** — a newer version replaces the older, because only the latest
 matters. The finalised queue **accumulates** — every closed candle is delivered exactly once.

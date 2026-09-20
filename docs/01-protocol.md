@@ -17,11 +17,13 @@ app boundary.
 
 ```text
 packages/protocol/src/
+├── decimal.ts     decimal-string ↔ bigint codecs, price scale 4 / quantity scale 8
 ├── market.ts      Symbol, Trade, BookSnapshot, BookDelta, Candle, Interval, Tier, NetworkReport
 ├── rest.ts        REST request params + response shapes
 ├── websocket.ts   every client and server frame, discriminated on `type`
-├── auth.ts        ticket payload + close codes
-└── schemas.ts     Zod schemas; TS types via z.infer — never hand-written twice
+├── auth.ts        ticket payload + error codes + close codes
+└── schemas.ts     barrel re-exporting every Zod schema; TS types via z.infer — never
+                   hand-written twice
 ```
 
 Rule: **the Zod schema is the definition.** Types are inferred from it. If you find yourself
@@ -45,6 +47,12 @@ aggregators are per-symbol and completely independent. There is no global sequen
 trade counter. A client resyncing `ETH-USD` does not touch its `BTC-USD` state.
 
 Every market frame — REST and WS — carries `symbol`. It is never implied by connection or context.
+Nested elements carry it too: a `trade` inside a `trades.batch`, a candle inside a `candles.update`.
+
+The schema validates the **shape** of a symbol (`SYMBOL_PATTERN`, `/^[A-Z0-9]{2,10}-[A-Z]{2,6}$/`),
+never the membership — that is the server registry's job, and encoding the list in the shared
+package would be the frontend hardcoding it by another route. A well-formed symbol the registry does
+not serve is `UNKNOWN_SYMBOL`; a malformed one is `INVALID_MESSAGE`.
 
 ### `GET /v1/markets`
 
@@ -135,7 +143,10 @@ GET /v1/markets/BTC-USD/candles
 ```
 
 - `interval` ∈ `1s | 5s | 1m`
-- `limit` clamped server-side; document the clamp in the README
+- `limit` defaults to `300` and is clamped server-side to `300`
+  (`CANDLE_HISTORY_LIMIT_MAX`), which is what the ring buffer in
+  [`02-market-domain.md §8`](./02-market-domain.md#8-candle-engine) is sized for. An over-large
+  `limit` is clamped, not rejected. Document the clamp in the README.
 
 **Normative:**
 
@@ -166,6 +177,10 @@ GET /healthz     liveness
 GET /readyz      readiness — every symbol engine has produced its first tick
 GET /metrics     counters, see 06-ops-deploy.md
 ```
+
+`/healthz` returns `{"status":"ok"}`. `/readyz` returns
+`{"ready":true,"pendingSymbols":[]}`, listing the engines still waiting for their first tick while
+`ready` is `false`. `/metrics` is Prometheus text, not JSON.
 
 ### REST rate limits
 
@@ -356,7 +371,7 @@ Carries zero or more finalised candles plus at most one active candle, for one s
 interval. A Minimal client receiving one update every two seconds can still see every `1s` candle
 that closed in between.
 
-*Illustrative:*
+**Normative:**
 
 ```json
 {
@@ -365,14 +380,28 @@ that closed in between.
   "interval": "1s",
   "candles": [
     {
-      "start": 1789874704000,
-      "final": true,
-      "...": "..."
+      "symbol": "BTC-USD",
+      "startTime": 1789874704000,
+      "open": "67230.8000",
+      "high": "67232.1000",
+      "low": "67230.4000",
+      "close": "67231.4287",
+      "volume": "1.20480000",
+      "tradeCount": 37,
+      "lastTradeId": "183191",
+      "final": true
     },
     {
-      "start": 1789874705000,
-      "final": false,
-      "...": "..."
+      "symbol": "BTC-USD",
+      "startTime": 1789874705000,
+      "open": "67231.4287",
+      "high": "67231.9000",
+      "low": "67231.2000",
+      "close": "67231.5500",
+      "volume": "0.31240000",
+      "tradeCount": 9,
+      "lastTradeId": "183200",
+      "final": false
     }
   ]
 }
@@ -432,9 +461,24 @@ Gated by `ENABLE_DEBUG_CONTROLS`.
 
 ### `tier.changed`
 
-Emitted whenever `effectiveTier` changes, so the UI never has to infer it. Carries `autoTier`,
-`override`, `effectiveTier`, the reason (`hysteresis` / `override` / `missing_reports`), and the
-target cadences.
+Emitted whenever `effectiveTier` changes, so the UI never has to infer it.
+
+**Normative:**
+
+```json
+{
+  "type": "tier.changed",
+  "autoTier": "degraded",
+  "override": null,
+  "effectiveTier": "degraded",
+  "reason": "hysteresis",
+  "candlesUpdateMs": 500,
+  "tradesBatchMs": 500
+}
+```
+
+`candlesUpdateMs` and `tradesBatchMs` are the target cadences for `effectiveTier`, taken from the
+table in [`03-adaptive-delivery.md §2`](./03-adaptive-delivery.md#2-delivery-scheduler).
 
 ---
 
@@ -465,7 +509,7 @@ nothing. Rationale in full: [`adr/0007-ws-auth-ticket.md`](./adr/0007-ws-auth-ti
 
 ```json
 {
-  "ticket": "eyJzdWIiOiJhbm9uLTdmM2EiLCJpYXQiOjE3ODk4NzQ3MDUxMjMsImV4cCI6MTc4OTg3NDc2NTEyM30.8Qk2...",
+  "ticket": "eyJzdWIiOiJhbm9uLTdmM2E5MWMyIiwiaWF0IjoxNzg5ODc0NzA1MTIzLCJleHAiOjE3ODk4NzQ3NjUxMjN9.ChPFdA-1RBOmSqq5U6f81t3fr3QIgJyPselIujLufH8",
   "expiresAt": 1789874765123
 }
 ```
