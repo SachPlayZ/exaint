@@ -43,12 +43,20 @@ export class MarketEngine {
   }
 
   /**
-   * Runs every tick owed by `wallNowMs`. The wall clock decides *when* work
+   * Runs the ticks owed by `wallNowMs`. The wall clock decides *when* work
    * happens; the logical clock decides *which* ticks happen, and in what order.
    * Returns the number of ticks run.
+   *
+   * `maxTicks` bounds one pass so a long stall cannot block the event loop
+   * indefinitely. Nothing is skipped — the remainder stays owed and is caught up
+   * on the next pass, which keeps the stream intact.
    */
-  runOwedTicks(wallNowMs: number, sink?: TickSink): number {
-    const owed = this.clock.owedTicks(wallNowMs);
+  runOwedTicks(
+    wallNowMs: number,
+    sink?: TickSink,
+    maxTicks: number = Number.POSITIVE_INFINITY,
+  ): number {
+    const owed = Math.min(this.clock.owedTicks(wallNowMs), maxTicks);
     for (let index = 0; index < owed; index += 1) this.advance(sink);
     return owed;
   }

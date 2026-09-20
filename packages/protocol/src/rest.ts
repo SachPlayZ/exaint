@@ -87,8 +87,15 @@ export const ReadyResponseSchema = z.object({
 });
 export type ReadyResponse = z.infer<typeof ReadyResponseSchema>;
 
+/**
+ * REST can also fail in a way the socket cannot: an unhandled server error.
+ * `INTERNAL_ERROR` exists only here — it is never a frame code.
+ */
+export const RestErrorCodeSchema = z.union([ErrorCodeSchema, z.literal('INTERNAL_ERROR')]);
+export type RestErrorCode = z.infer<typeof RestErrorCodeSchema>;
+
 export const RestErrorResponseSchema = z.object({
-  code: ErrorCodeSchema,
+  code: RestErrorCodeSchema,
   message: z.string().optional(),
   /** Present on `429 RATE_LIMITED`. */
   retryAfterMs: z.number().int().nonnegative().optional(),

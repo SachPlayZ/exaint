@@ -4,8 +4,9 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P4 (not started). P0–P3 complete — scaffold, protocol contracts, deterministic
-five-symbol market domain, and the canonical candle engine; 145 passing tests. See § Review.
+**Current phase:** P5 (not started). P0–P4 complete — scaffold, protocol contracts, deterministic
+five-symbol market domain, canonical candle engine, and the REST API; 178 passing tests.
+See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -58,13 +59,13 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P4 — REST API
 
-- [ ] `GET /v1/markets` — symbol registry
-- [ ] `GET /v1/markets/:symbol/book`
-- [ ] `GET /v1/markets/:symbol/candles?interval=&limit=`
-- [ ] `POST /v1/auth/ticket` — HMAC, 60 s, single-use
-- [ ] `GET /healthz`, `/readyz`, `/metrics`
-- [ ] CORS from `ALLOWED_ORIGINS`; per-IP REST rate limits
-- [ ] **Gate:** schema-validated responses; no duplicate `startTime`; `limit` clamp documented;
+- [x] `GET /v1/markets` — symbol registry
+- [x] `GET /v1/markets/:symbol/book`
+- [x] `GET /v1/markets/:symbol/candles?interval=&limit=`
+- [x] `POST /v1/auth/ticket` — HMAC, 60 s, single-use
+- [x] `GET /healthz`, `/readyz`, `/metrics`
+- [x] CORS from `ALLOWED_ORIGINS`; per-IP REST rate limits
+- [x] **Gate:** schema-validated responses; no duplicate `startTime`; `limit` clamp documented;
       `/readyz` waits for every engine's first tick
 
 ## P5 — WebSocket gateway
@@ -329,3 +330,53 @@ this layer.
 
 **Still open.** Nothing new. The candle *delivery* rules — pending finalised queue, coalesced
 active slot, per-tier cadence — are P6, and deliberately live outside this engine.
+
+### P4 — REST API (complete)
+
+**What changed.** `app/wire.ts` (the single JSON boundary), `auth/ticket-service.ts`,
+`market/market-repository.ts`, `app/market-runtime.ts`, `app/create-app.ts`,
+`observability/metrics.ts`, and `routes/{health,markets,auth,errors}.ts`. `build-server.ts` now
+registers CORS, per-route rate limits, and an error handler; `index.ts` boots the market.
+
+**Verified.** 178 tests green (57 protocol, 121 api), `lint`/`typecheck`/`build` clean, plus a live
+`curl` pass against `pnpm dev:api` covering every route, the 404 and the 400.
+- Every response is parsed back through its protocol schema in the test, so a shape change breaks
+  the build rather than the client.
+- History is asserted ascending and unique by `startTime` on all three intervals, with the last
+  candle `final: false` and the rest `final: true`.
+- `limit` is clamped, not rejected: `99999` returns ≤ 300, `5` returns 5, and the limit bounds the
+  whole response including the active candle.
+- `/readyz` returns `503` with the pending symbols before the first tick and `200` after.
+- Empty history returns `200` with `[]` — a valid state, never an error.
+- Ticket tests are the T7 ticket half in full: valid, missing, bad signature, foreign secret,
+  tampered payload, expired, replayed, and a consumed-set that is bounded by the TTL.
+- `wire.ts` is exercised against 400 ticks of live market: every encoded trade, delta, candle and
+  snapshot parses and `JSON.stringify`s — a stray `bigint` there is a production `TypeError`.
+
+**A defect this phase caught.** The P2 order book passed all its tests and was still wrong:
+replenishment extended outward from the far edge only, so as the fair value moved the touch
+migrated while the old cluster stayed put — gaps of up to 217 grid steps, on 1,195 of 1,200 ticks.
+It surfaced from reading a `curl` of `/v1/markets/HYPE-USD/book`. Replenishment now fills empty
+slots from the touch outward, contiguity is asserted every tick in
+`simulator.test.ts`, and the pattern is recorded in `tasks/lessons.md`.
+
+**Decisions taken here.**
+- **Status-code mapping** (`400/404/429/500/503`) and the REST-only `INTERNAL_ERROR` code are now
+  in `docs/01-protocol.md §4`. `INTERNAL_ERROR` widens `RestErrorResponseSchema` only — it is never
+  a frame code.
+- **Bounded catch-up.** `MARKET_MAX_CATCHUP_TICKS` (default `200`) bounds one pass; the remainder
+  stays owed, so nothing is skipped. This resolves the open question P2 raised, and is recorded in
+  `docs/02-market-domain.md §4` and `docs/06-ops-deploy.md §3`.
+- **`AUTH_MODE=off` still mints a ticket**, so the client's connect flow is identical locally; the
+  gateway is what stops checking.
+- **An ephemeral dev secret.** With `AUTH_MODE=ticket` and no `AUTH_TICKET_SECRET`, a non-production
+  process mints a random per-process secret instead of refusing to boot, so a stranger can clone,
+  install and `pnpm dev` with no setup (`docs/06-ops-deploy.md §1`). `NODE_ENV=production` still
+  throws.
+- `TicketService` does mint **and** verify now rather than being split across P4/P5 — a ticket
+  service that cannot verify cannot be tested. P5 wires verification into the handshake.
+
+**Still open.**
+- `/metrics` carries only the counters that exist by P4; the `ws_*`, `tier_*` and
+  `*_delivered{tier}` series arrive with the gateway and the scheduler.
+- The rate limiter here is the per-IP REST one. The per-connection token buckets are P5.

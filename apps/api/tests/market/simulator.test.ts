@@ -82,6 +82,29 @@ describe('trade and book coherence (docs/02-market-domain.md §6)', () => {
     }
   });
 
+  it('keeps the visible ladder contiguous on the price grid, with no holes', () => {
+    const engine = buildEngine(9n);
+    for (let tick = 0; tick < 600; tick += 1) {
+      engine.advance((result) => {
+        const symbolEngine = engine.registry.get(result.symbol);
+        const spacing = SYMBOL_CONFIG_BY_SYMBOL.get(result.symbol)?.levelSpacing;
+        if (symbolEngine === undefined || spacing === undefined) return;
+        for (const side of ['bid', 'ask'] as const) {
+          const prices = symbolEngine.book.prices(side);
+          for (let index = 1; index < prices.length; index += 1) {
+            const previous = prices[index - 1];
+            const current = prices[index];
+            if (previous === undefined || current === undefined) continue;
+            const gap = previous > current ? previous - current : current - previous;
+            // Exactly one grid step: a lonely touch above a stale block is the
+            // failure this guards.
+            expect(gap, `${result.symbol} ${side}`).toBe(spacing);
+          }
+        }
+      });
+    }
+  });
+
   it('holds the book at exactly the configured depth per side', () => {
     const engine = buildEngine(7n);
     for (let tick = 0; tick < 300; tick += 1) engine.advance();

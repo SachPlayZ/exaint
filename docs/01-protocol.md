@@ -182,6 +182,20 @@ GET /metrics     counters, see 06-ops-deploy.md
 `{"ready":true,"pendingSymbols":[]}`, listing the engines still waiting for their first tick while
 `ready` is `false`. `/metrics` is Prometheus text, not JSON.
 
+### REST status codes
+
+The error body is always `{ "code": … }`, optionally with `message`, and on `429` with
+`retryAfterMs`. Codes are the ones in §5; the status is how they map onto HTTP.
+
+| Status | Code | When |
+| ---: | --- | --- |
+| `400` | `INVALID_MESSAGE` | Params or query failed validation |
+| `400` | `INVALID_INTERVAL` | `interval` not in `1s \| 5s \| 1m` |
+| `404` | `UNKNOWN_SYMBOL` | Symbol not in `MARKET_SYMBOLS`, or no such route |
+| `429` | `RATE_LIMITED` | Per-IP budget exceeded; body carries `retryAfterMs` |
+| `500` | `INTERNAL_ERROR` | Unhandled server error. **REST only** — never a frame code |
+| `503` | — | `/readyz` before every engine's first tick; body is the readiness shape |
+
 ### REST rate limits
 
 | Route | Limit |

@@ -1,0 +1,66 @@
+import type { FastifyInstance } from 'fastify';
+import { buildServer } from '../../src/app/build-server.js';
+import type { AppContext } from '../../src/app/context.js';
+import { MarketRuntime } from '../../src/app/market-runtime.js';
+import { TicketService } from '../../src/auth/ticket-service.js';
+import { MarketEngine } from '../../src/market/market-engine.js';
+import { MarketRepository } from '../../src/market/market-repository.js';
+import { DEFAULT_SYMBOLS } from '../../src/market/symbol-config.js';
+import { SymbolRegistry } from '../../src/market/symbol-registry.js';
+import { createMetricsRegistry } from '../../src/observability/metrics.js';
+
+export const TEST_START_TIME = 1_700_000_000_000;
+export const TEST_SECRET = 'test-secret-not-used-anywhere-real';
+
+export interface TestApp {
+  readonly server: FastifyInstance;
+  readonly context: AppContext;
+  readonly runtime: MarketRuntime;
+  readonly registry: SymbolRegistry;
+  /** Advances the market by `ticks` logical ticks. No timers, no sleeping. */
+  pump(ticks: number): void;
+  close(): Promise<void>;
+}
+
+/** A server wired to a deterministic market, driven by hand rather than a timer. */
+export async function createTestApp(
+  options: { readonly authMode?: 'ticket' | 'off'; readonly ticketTtlMs?: number } = {},
+): Promise<TestApp> {
+  const registry = new SymbolRegistry({
+    symbols: DEFAULT_SYMBOLS,
+    marketSeed: 1337n,
+    bookDepth: 25,
+  });
+  const engine = new MarketEngine({ registry, tickMs: 50, startTime: TEST_START_TIME });
+  const metrics = createMetricsRegistry();
+  const runtime = new MarketRuntime({ engine, metrics, maxCatchUpTicks: 200 });
+  const ttlMs = options.ticketTtlMs ?? 60_000;
+
+  const context: AppContext = {
+    repository: new MarketRepository(registry),
+    metrics,
+    tickets:
+      (options.authMode ?? 'ticket') === 'ticket'
+        ? new TicketService({ secret: TEST_SECRET, ttlMs })
+        : null,
+    auth: { mode: options.authMode ?? 'ticket', secret: TEST_SECRET, ttlMs },
+    http: { allowedOrigins: ['http://localhost:3000'], enableDebugControls: true },
+  };
+
+  const server = await buildServer(context);
+  await server.ready();
+
+  return {
+    server,
+    context,
+    runtime,
+    registry,
+    pump(ticks: number): void {
+      runtime.pump(TEST_START_TIME + ticks * 50);
+    },
+    async close(): Promise<void> {
+      runtime.stop();
+      await server.close();
+    },
+  };
+}

@@ -185,27 +185,29 @@ export class MarketSimulator {
   }
 
   /**
-   * Refills each side back to `depth`, always **further from the mid** — the
-   * replenishment rule in docs/02-market-domain.md §6. Levels further out are
-   * larger, which is what gives the cumulative depth bars their shape.
+   * Refills the visible ladder, walking **away from the mid** from the touch —
+   * the replenishment rule in docs/02-market-domain.md §6. Levels further out
+   * are larger, which is what gives the cumulative depth bars their shape.
+   *
+   * It fills every empty grid slot within the window rather than extending from
+   * the far edge. Extending only outward leaves the ladder gappy: the touch
+   * migrates with the fair value while the old cluster stays put, and the book
+   * ends up as a lonely best level and a stale block a long way beneath it.
+   * A reviewer spots that in five seconds, and the depth bars are meaningless.
    */
   #replenish(book: OrderBook, desiredBid: bigint, desiredAsk: bigint): void {
     const { levelSpacing } = this.config;
 
     for (const side of ['bid', 'ask'] as const) {
       const step = side === 'bid' ? -levelSpacing : levelSpacing;
-      const prices = book.prices(side);
-      let edge = prices[prices.length - 1];
-      if (edge === undefined) edge = (side === 'bid' ? desiredBid : desiredAsk) - step;
+      const touch = book.best(side) ?? (side === 'bid' ? desiredBid : desiredAsk);
 
-      let guard = book.depth * 2;
-      while (book.size(side) < book.depth && guard > 0) {
-        guard -= 1;
-        edge += step;
-        if (edge <= 0n) break;
-        const distance = book.size(side);
-        const scale = 1n + BigInt(Math.floor(distance / 8));
-        book.setLevel(side, edge, this.#randomLevelQuantity() * scale);
+      for (let offset = 0; offset < book.depth; offset += 1) {
+        const price = touch + step * BigInt(offset);
+        if (price <= 0n) break;
+        if (book.quantityAt(side, price) !== 0n) continue;
+        const scale = 1n + BigInt(Math.floor(offset / 8));
+        book.setLevel(side, price, this.#randomLevelQuantity() * scale);
       }
     }
   }

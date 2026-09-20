@@ -62,12 +62,18 @@ Measured over one simulated minute from `MARKET_SEED=1337` (asserted in
 `apps/api/tests/market/simulator.test.ts`):
 
 ```text
-BTC-USD    spread 0.59 bp    1-min range  4.8 bp
+BTC-USD    spread 0.59 bp    1-min range  3.0 bp
 ETH-USD    spread 0.59 bp    1-min range  2.4 bp
-SOL-USD    spread 1.96 bp    1-min range 17.6 bp
-ZEC-USD    spread 2.30 bp    1-min range 12.7 bp
-HYPE-USD   spread 6.22 bp    1-min range 82.9 bp
+SOL-USD    spread 1.95 bp    1-min range 11.7 bp
+ZEC-USD    spread 2.30 bp    1-min range  9.2 bp
+HYPE-USD   spread 6.18 bp    1-min range 26.8 bp
 ```
+
+The visible ladder stays **contiguous on the grid**: every adjacent pair of displayed levels is
+exactly one `levelSpacing` apart, on both sides, at all times. Replenishment fills empty slots from
+the touch outward rather than extending from the far edge — extending outward alone lets the touch
+migrate with the fair value while the old cluster stays put, and the book degenerates into a lonely
+best level above a stale block. Asserted in `apps/api/tests/market/simulator.test.ts`.
 
 The differing character is deliberate: five identical random walks at different price levels looks
 like one symbol rendered five times. A reviewer switching from `BTC-USD` to `HYPE-USD` should
@@ -167,6 +173,17 @@ ticks are processed, never *which* ticks occur or in what order. This is what ma
 survive a loaded machine, and what makes the replay tests meaningful.
 
 One scheduler drives all five engines. Five `setInterval`s would give five drifting clocks.
+
+### Bounded catch-up
+
+`MarketEngine.runOwedTicks` runs at most `MARKET_MAX_CATCHUP_TICKS` (default `200`, ten seconds of
+market time) in a single pass, so one long stall cannot block the event loop while it replays.
+
+Nothing is skipped. The remainder stays owed and is caught up on the next pass, which is what keeps
+the stream intact — a market that dropped ticks under load would not be deterministic, and the
+replay tests would be measuring nothing. A sixty-second freeze clears over six passes, roughly
+300 ms.
+
 
 ---
 
@@ -396,11 +413,11 @@ per-connection.
 
 ---
 
+**Resolved:** catch-up is bounded per pass by `MARKET_MAX_CATCHUP_TICKS` (§4), with no tick
+skipped.
+
 ## Open questions
 
-- Catch-up is currently unbounded: after a long stall, `MarketEngine.runOwedTicks` runs every owed
-  tick in one pass, which blocks the event loop for as long as it takes. A cap needs a number, and
-  the number belongs with the scheduler that will own it — decide in P4/P5 and record it here.
 - Should the simulator model correlated moves across symbols — a market-wide risk-off tick — or
   keep the five streams fully independent? *(assumed: independent; correlation is a nice demo
   touch with no bearing on any invariant, so it is the first thing cut for time)*

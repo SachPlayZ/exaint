@@ -34,3 +34,19 @@ rationale, teardown, public repo, chart-library constraint, watchlist bonus).
 brief — including its Deliverables and Bonus sections — before calling it done. Internal
 consistency is not coverage.
 **Applies to:** any doc or implementation traced to a written spec.
+
+## 2026-09-20 — Smoke-test the real output, not just the assertions
+
+**What happened:** P2's order book passed every test — 25 levels a side, uncrossed, correct
+sequencing, deterministic replay — and was still wrong. Replenishment only extended outward from
+the far edge, so as the fair value moved the touch migrated and the old cluster stayed put: the
+book was a lonely best level above a stale block, with gaps of up to 200 grid steps. It surfaced
+only when a `curl` against the running API was read with human eyes during P4.
+**Rule:** For anything a human will look at, print a real sample and read it before calling the
+phase done. Tests assert the properties you thought of; a sample shows the ones you did not. When
+the sample looks off, measure the suspicion before theorising — the gap histogram took two minutes
+and ended a chain of wrong guesses.
+**Applies to:** the market simulator, the order book panel, the chart, anything with a visual
+shape. Phase gate [`../AGENTS.md` §6.5](../AGENTS.md#6-definition-of-done-phase-gate) already says
+"demonstrated, not assumed" — this is what that means for output a person reads.
+

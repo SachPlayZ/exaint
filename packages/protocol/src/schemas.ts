@@ -36,6 +36,7 @@ export {
   HealthResponseSchema,
   MarketsResponseSchema,
   ReadyResponseSchema,
+  RestErrorCodeSchema,
   RestErrorResponseSchema,
   SymbolParamsSchema,
   TicketResponseSchema,

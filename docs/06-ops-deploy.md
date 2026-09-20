@@ -94,6 +94,7 @@ Additional backend knobs introduced during the build (record defaults here as th
 | --- | --- | --- |
 | `MARKET_BOOK_DEPTH` | `25` | Levels per side, all symbols |
 | `MARKET_TICK_MS` | `50` | Logical tick size |
+| `MARKET_MAX_CATCHUP_TICKS` | `200` | Ticks one catch-up pass may run after a stall |
 | `AUTH_MODE` | `ticket` | `ticket` or `off` (local dev only) |
 | `AUTH_TICKET_SECRET` | — | HMAC-SHA256 key; **required** when `AUTH_MODE=ticket` |
 | `AUTH_TICKET_TTL_MS` | `60000` | Connect-ticket lifetime |
