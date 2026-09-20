@@ -1,4 +1,4 @@
-import type { ClientFrame, ErrorCode, ServerFrame } from '@repo/protocol';
+import type { ClientFrame, ErrorCode, ServerFrame, Tier } from '@repo/protocol';
 import { CLOSE_CODES, decodeClientFrame } from '@repo/protocol';
 import type { MarketRepository } from '../market/market-repository.js';
 import { METRIC, type MetricsRegistry } from '../observability/metrics.js';
@@ -15,6 +15,8 @@ export interface FrameHandlerDeps {
   readonly now: () => number;
   /** Called whenever the subscription set changed, so gauges can be refreshed. */
   readonly onSubscriptionsChanged: () => void;
+  readonly onNetworkReport: (rttMs: number, jitterMs: number) => void;
+  readonly onTierOverride: (tier: Tier | null) => void;
 }
 
 /**
@@ -66,9 +68,8 @@ function applyFrame(frame: ClientFrame, deps: FrameHandlerDeps): void {
       return;
 
     case 'network.report':
-      session.rttMs = frame.rttMs;
-      session.jitterMs = frame.jitterMs;
-      session.lastNetworkReportAt = deps.now();
+      // The controller owns rtt/jitter and the hysteresis counters.
+      deps.onNetworkReport(frame.rttMs, frame.jitterMs);
       return;
 
     case 'debug.tier_override':
@@ -77,8 +78,8 @@ function applyFrame(frame: ClientFrame, deps: FrameHandlerDeps): void {
         return;
       }
       // The override moves effectiveTier only; autoTier keeps being measured
-      // (docs/03-adaptive-delivery.md §7). tier.changed lands in P6.
-      session.tierOverride = frame.tier;
+      // (docs/03-adaptive-delivery.md §7).
+      deps.onTierOverride(frame.tier);
       return;
 
     case 'subscribe': {

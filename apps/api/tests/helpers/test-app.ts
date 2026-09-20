@@ -21,6 +21,8 @@ export interface TestApp {
   readonly registry: SymbolRegistry;
   /** Advances the market by `ticks` logical ticks. No timers, no sleeping. */
   pump(ticks: number): void;
+  /** Advances the connection clock without running the market. */
+  advanceClock(ms: number): void;
   close(): Promise<void>;
 }
 
@@ -66,7 +68,13 @@ export async function createTestApp(
     },
   };
 
+  // Every per-connection time decision — cadence, token buckets, heartbeat,
+  // missing-report ladder — reads this clock. Tests advance it explicitly, so
+  // nothing here depends on how fast the machine happens to be.
+  const clockBase = Date.now();
+  const clock = { value: clockBase };
   const server = await buildServer(context, runtime, {
+    now: () => clock.value,
     ...(options.heartbeatTimeoutMs === undefined
       ? {}
       : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
@@ -86,7 +94,16 @@ export async function createTestApp(
     runtime,
     registry,
     pump(ticks: number): void {
-      runtime.pump(TEST_START_TIME + ticks * 50);
+      // One tick at a time, so the scheduler sees wall time advance the way it
+      // would in production rather than a single instant.
+      for (let tick = 0; tick < ticks; tick += 1) {
+        const logicalAt = TEST_START_TIME + (engine.clock.tick + 1) * 50;
+        clock.value = clockBase + (engine.clock.tick + 1) * 50;
+        runtime.pump(logicalAt);
+      }
+    },
+    advanceClock(ms: number): void {
+      clock.value += ms;
     },
     async close(): Promise<void> {
       runtime.stop();

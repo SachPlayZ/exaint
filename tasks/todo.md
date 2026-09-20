@@ -4,9 +4,8 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P6 (not started). P0–P5 complete — scaffold, protocol contracts, deterministic
-five-symbol market domain, canonical candle engine, REST API, and the WebSocket gateway;
-205 passing tests. See § Review.
+**Current phase:** P7 (not started). P0–P6 complete — the whole backend, including adaptive
+delivery; 235 passing tests. See § Review.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
@@ -83,13 +82,14 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 ## P6 — Adaptive delivery
 
-- [ ] `tier-controller.ts` — EWMA α=0.2, all four hysteresis transitions, initial `DEGRADED`
-- [ ] missing-report ladder 15 s / 30 s / 45 s
-- [ ] `delivery-scheduler.ts` — candles 10/2/0.5 Hz **and** trades 5/2/0.5 Hz, per symbol
+- [x] `tier-controller.ts` — all four hysteresis transitions, initial `DEGRADED` (the EWMA is the
+      client's, per `03 §4`)
+- [x] missing-report ladder 15 s / 30 s / 45 s
+- [x] `delivery-scheduler.ts` — candles 10/2/0.5 Hz **and** trades 5/2/0.5 Hz, per symbol
       subscription; pending finalised + coalesced active
-- [ ] `debug.tier_override` affects `effectiveTier` only
-- [ ] backpressure policy on `bufferedAmount` (record chosen thresholds in `03`)
-- [ ] **Gate:** T1 + T3 pass; three concurrent tiers, also on three different symbols; Minimal
+- [x] `debug.tier_override` affects `effectiveTier` only
+- [x] backpressure policy on `bufferedAmount` (thresholds recorded in `03 §9`)
+- [x] **Gate:** T1 + T3 pass; three concurrent tiers, also on three different symbols; Minimal
       loses no finalised candle; both cadences move with tier
 
 ## P7 — Frontend networking
@@ -427,3 +427,65 @@ gained the `ws_*`, `*_delivered` and `subscriptions_by_symbol` series.
 - `tier.changed`, the tier controller, the delivery scheduler and backpressure are P6.
 - `ws_reconnects`, `tier_changes` and `book_resyncs` counters land with the phases that can
   observe them.
+
+### P6 — Adaptive delivery (complete)
+
+**What changed.** `websocket/tier-controller.ts` and `websocket/delivery-scheduler.ts`.
+`SymbolSubscription` became a class carrying exactly the fields `docs/03 §8` lists
+(`lastCandleSentAt`, `pendingFinalCandles`, `latestActiveCandle`, `lastTradeBatchSentAt`,
+`pendingTrades`). The dispatcher now enqueues and flushes through the scheduler, applies
+backpressure, and the gateway emits `tier.changed`.
+
+**Verified.** 235 tests green (58 protocol, 177 api), `lint`/`typecheck`/`build` clean.
+
+**T1 — hysteresis**, entirely on a fake clock: promotion takes exactly five good reports, not four;
+a single bad sample does not demote; three sustained bad ones do; demotion fires on OR (jitter alone
+is enough) while promotion requires AND (good RTT with bad jitter never promotes); an in-between
+report resets both counters; `DEGRADED ↔ MINIMAL` shows the same asymmetry; an override moves
+`effectiveTier` while `autoTier` keeps climbing to `full` underneath; removing the override lands on
+the current `autoTier` with no re-warm-up; the missing-report ladder fires at 15 s and 30 s, and
+measures from connect time when no report ever arrived.
+
+**T3 — candle invariance**, three virtual clients over 10,000+ deterministic trades:
+- `FULL === DEGRADED === MINIMAL` on final candles, byte for byte.
+- All three equal the **canonical** set — equality alone would not catch a candle lost at both ends.
+- No finalised candle delivered twice, and all arrive in `startTime` order.
+- `tradeCount` per candle matches the canonical count at every tier, so no trade is double-counted
+  however the batches fell.
+- Repeated with three clients on three different symbols, and again with **one** connection holding
+  three symbols — the arrangement that catches a scheduler keyed by connection instead of
+  `(connection, symbol)`.
+
+**Demonstrated live.** Three connections held at three tiers on `BTC-USD` for ten seconds against
+`pnpm dev:api`:
+
+```text
+full      candleFrames 87   tradeFrames 48   | full candles=100ms trades=200ms
+degraded  candleFrames 20   tradeFrames 20   | (no change — already degraded)
+minimal   candleFrames  5   tradeFrames  5   | minimal candles=2000ms trades=2000ms
+
+final candle values identical across all three tiers: true
+```
+
+8.7 Hz / 2.0 Hz / 0.5 Hz against targets of 10 / 2 / 0.5, with `candle_updates_generated` flat at 15
+while `candle_updates_delivered` split 87 / 20 / 5 by tier. That pair of counters is the aggregate
+form of the same argument, and is now quoted in `docs/06-ops-deploy.md §5`.
+
+**Design decisions worth knowing.**
+- **The active slot is cleared after a send, not retained.** Retaining it would re-send an unchanged
+  bucket ten times a second on an idle market. The finalised queue still accumulates, so nothing is
+  lost — that asymmetry is the whole trick.
+- **Changing interval discards candle state** for the old one. Merging a `1s` bucket into a `1m`
+  stream would be a silently wrong chart.
+- **No server-side smoothing.** `docs/03 §4` puts the EWMA on the client; smoothing the reported
+  values again would distort thresholds that are stated against those numbers. `PLAN.md` said
+  otherwise and has been corrected.
+- **One injected clock per connection** governs cadence, token-bucket refill, the heartbeat and the
+  missing-report ladder. Tests advance it explicitly, so no socket test depends on machine speed.
+- **Backpressure thresholds** are `256 KiB` soft (drop trade batches) and `1 MiB` hard
+  (`BACKPRESSURE_CLOSE`, close `4409`), derived from delta size and rate and recorded in
+  `docs/03 §9`. This closes the last open question in that doc.
+- `tier.changed` is emitted only when `effectiveTier` actually moves — overriding to the tier a
+  connection is already on produces no frame, which a socket test asserts by absence.
+
+**Still open.** Nothing in the backend. P7 starts the frontend.

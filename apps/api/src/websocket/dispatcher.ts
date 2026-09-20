@@ -1,33 +1,41 @@
 import type { ServerFrame } from '@repo/protocol';
-import { encodeBookDelta, encodeCandle, encodeTrade } from '../app/wire.js';
+import { CLOSE_CODES } from '@repo/protocol';
+import { encodeBookDelta } from '../app/wire.js';
 import type { SymbolTickResult } from '../market/events.js';
 import { METRIC, type MetricsRegistry } from '../observability/metrics.js';
 import type { ConnectionSession } from './connection-session.js';
+import {
+  BACKPRESSURE_HARD_BYTES,
+  BACKPRESSURE_SOFT_BYTES,
+  enqueue,
+  flushDue,
+} from './delivery-scheduler.js';
 
 /** One open socket, from the dispatcher's point of view. */
 export interface ConnectionHandle {
   readonly session: ConnectionSession;
   readonly isOpen: () => boolean;
   readonly send: (frame: ServerFrame) => void;
+  readonly bufferedAmount: () => number;
+  readonly close: (code: number, reason: string) => void;
 }
 
 /**
- * Fans canonical market events out to interested connections.
+ * Fans canonical market events out to interested connections, through each
+ * connection's own scheduler.
  *
  * One subscription to the runtime for the whole process, not one per socket:
  * the market is computed once and every client is served from it
  * (docs/07-invariants.md#i2--candle-invariance).
- *
- * P5 sends as data arrives. P6 puts the per-connection scheduler in front of
- * `candles.update` and `trades.batch` — book deltas stay unpaced either way,
- * because they carry correctness rather than decoration.
  */
 export class MarketDispatcher {
   readonly #connections = new Set<ConnectionHandle>();
   readonly #metrics: MetricsRegistry;
+  readonly #now: () => number;
 
-  constructor(metrics: MetricsRegistry) {
+  constructor(metrics: MetricsRegistry, now: () => number = Date.now) {
     this.#metrics = metrics;
+    this.#now = now;
   }
 
   get size(): number {
@@ -44,40 +52,41 @@ export class MarketDispatcher {
 
   dispatch(result: SymbolTickResult): void {
     if (this.#connections.size === 0) return;
+    const now = this.#now();
 
     for (const handle of this.#connections) {
+      if (!handle.isOpen()) continue;
       const subscription = handle.session.subscription(result.symbol);
-      if (subscription === undefined || !handle.isOpen()) continue;
-      const tier = handle.session.effectiveTier;
+      if (subscription === undefined) continue;
 
+      const buffered = handle.bufferedAmount();
+      if (buffered > BACKPRESSURE_HARD_BYTES) {
+        // Book deltas may never be dropped, so there is no lever left. A closed
+        // socket is an observable resync; a dropped delta is silent corruption.
+        handle.send({ type: 'error', code: 'BACKPRESSURE_CLOSE' });
+        handle.close(CLOSE_CODES.BACKPRESSURE, 'outbound book stream unrecoverable');
+        continue;
+      }
+
+      // Never paced, never coalesced, never dropped — deltas carry correctness.
       if (subscription.channels.has('book') && result.delta !== null) {
         handle.send(encodeBookDelta(result.delta));
       }
 
-      if (subscription.channels.has('trades') && result.trades.length > 0) {
-        handle.send({
-          type: 'trades.batch',
-          symbol: result.symbol,
-          trades: result.trades.map(encodeTrade),
-        });
-        this.#metrics.increment(METRIC.tradeBatchesDelivered, { symbol: result.symbol, tier });
+      enqueue(subscription, result);
+      const tier = handle.session.effectiveTier;
+      const frames = flushDue(subscription, now, tier, {
+        dropTrades: buffered > BACKPRESSURE_SOFT_BYTES,
+      });
+
+      for (const frame of frames) {
+        handle.send(frame);
+        const metric =
+          frame.type === 'candles.update'
+            ? METRIC.candleUpdatesDelivered
+            : METRIC.tradeBatchesDelivered;
+        this.#metrics.increment(metric, { symbol: result.symbol, tier });
       }
-
-      const interval = subscription.subscribedInterval;
-      if (!subscription.channels.has('candles') || interval === null) continue;
-
-      const candles = [
-        ...result.finalisedCandles
-          .filter((candle) => candle.interval === interval)
-          .map((candle) => encodeCandle(candle, true)),
-        ...result.activeCandles
-          .filter((candle) => candle.interval === interval)
-          .map((candle) => encodeCandle(candle, false)),
-      ];
-      if (candles.length === 0) continue;
-
-      handle.send({ type: 'candles.update', symbol: result.symbol, interval, candles });
-      this.#metrics.increment(METRIC.candleUpdatesDelivered, { symbol: result.symbol, tier });
     }
   }
 }

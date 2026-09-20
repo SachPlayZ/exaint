@@ -266,8 +266,10 @@ survives past its ticket's `exp`.
 **Goal.** The headline feature. Per-connection frequency, zero effect on content.
 
 **Deliverables.**
-- `tier-controller.ts` — EWMA (`α = 0.2`) over RTT and jitter, hysteresis thresholds exactly as
-  specified, initial tier `DEGRADED`, missing-report ladder `15s / 30s / 45s`
+- `tier-controller.ts` — hysteresis thresholds exactly as specified, initial tier `DEGRADED`,
+  missing-report ladder `15s / 30s / 45s`. The EWMA (`α = 0.2`) is the **client's** — it smooths RTT
+  and jitter and reports smoothed values ([`03 §4`](./docs/03-adaptive-delivery.md#4-latency-and-jitter-smoothing));
+  smoothing again server-side would distort thresholds that are stated against the reported numbers
 - `delivery-scheduler.ts` — candle targets `10Hz` / `2Hz` / `0.5Hz` and trade-batch targets
   `5Hz` / `2Hz` / `0.5Hz`, kept **per symbol subscription**; maintains `pendingFinalCandles` and
   `latestActiveCandle`; a send emits every pending finalised candle **plus** the newest active one
@@ -487,5 +489,5 @@ Carried until answered. Do not silently decide these.
 
 - A `ticker` channel for live per-row prices in the watchlist — deferred, not rejected
   ([01 open questions](./docs/01-protocol.md#open-questions)). The watchlist works without it.
-- `bufferedAmount` backpressure thresholds — pick in P6 and record them in
-  [`03`](./docs/03-adaptive-delivery.md).
+**Resolved:** `bufferedAmount` backpressure thresholds are `256 KiB` soft and `1 MiB` hard, recorded
+in [`03 §9`](./docs/03-adaptive-delivery.md#9-backpressure).

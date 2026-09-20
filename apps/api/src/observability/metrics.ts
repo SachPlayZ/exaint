@@ -93,6 +93,7 @@ export const METRIC = {
   invalidWsMessages: 'invalid_ws_messages',
   rateLimitedFrames: 'rate_limited_frames',
   rateLimitCloses: 'rate_limit_closes',
+  tierChanges: 'tier_changes',
   tradeBatchesDelivered: 'trade_batches_delivered',
   candleUpdatesDelivered: 'candle_updates_delivered',
 } as const;
@@ -115,6 +116,7 @@ export function createMetricsRegistry(): MetricsRegistry {
   metrics.register(METRIC.invalidWsMessages, 'counter', 'Inbound frames rejected by validation.');
   metrics.register(METRIC.rateLimitedFrames, 'counter', 'Frames dropped by the limiter, by type.');
   metrics.register(METRIC.rateLimitCloses, 'counter', 'Sockets closed for sustained rate abuse.');
+  metrics.register(METRIC.tierChanges, 'counter', 'Effective-tier transitions, by reason.');
   metrics.register(
     METRIC.tradeBatchesDelivered,
     'counter',

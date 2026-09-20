@@ -201,6 +201,18 @@ Symbol-labelled counters are what make a five-symbol engine debuggable; a single
 visible in aggregate: generated stays flat, delivered drops as clients degrade. With tier-scaled
 trade batching, `trade_batches_delivered{tier}` shows the same shape.
 
+Measured on a live server with three connections held at three tiers on `BTC-USD` for ten seconds:
+
+```text
+candle_updates_generated{symbol="BTC-USD"}                       15
+candle_updates_delivered{symbol="BTC-USD",tier="full"}           87
+candle_updates_delivered{symbol="BTC-USD",tier="degraded"}       20
+candle_updates_delivered{symbol="BTC-USD",tier="minimal"}         5
+```
+
+8.7 Hz / 2.0 Hz / 0.5 Hz against targets of 10 / 2 / 0.5, with byte-identical final candle values
+in all three connections.
+
 ---
 
 ## 6. CI/CD

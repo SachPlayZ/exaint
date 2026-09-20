@@ -332,19 +332,114 @@ describe('validation and resilience', () => {
   });
 });
 
+describe('adaptive delivery over the socket', () => {
+  it('announces tier.changed on an override, with the target cadences', async () => {
+    const { app, url } = await bootstrap();
+    const socket = await connect(url, await mintTicket(app));
+    await socket.waitFor('hello');
+
+    socket.send({ type: 'debug.tier_override', tier: 'minimal' });
+    const changed = await socket.waitFor('tier.changed');
+    expect(changed).toMatchObject({
+      autoTier: 'degraded',
+      override: 'minimal',
+      effectiveTier: 'minimal',
+      reason: 'override',
+      candlesUpdateMs: 2_000,
+      tradesBatchMs: 2_000,
+    });
+
+    socket.send({ type: 'debug.tier_override', tier: null });
+    const cleared = await socket.waitFor('tier.changed', 2);
+    expect(cleared).toMatchObject({
+      override: null,
+      effectiveTier: 'degraded',
+      candlesUpdateMs: 500,
+      tradesBatchMs: 500,
+    });
+  });
+
+  it('promotes after five good reports and says so', async () => {
+    const { app, url } = await bootstrap();
+    const socket = await connect(url, await mintTicket(app));
+    await socket.waitFor('hello');
+
+    // A real client reports every 5 s; the bucket is 1/s with a burst of 3.
+    // Advance the connection clock rather than sleeping.
+    for (let report = 0; report < 5; report += 1) {
+      socket.send({ type: 'network.report', rttMs: 30, jitterMs: 4, samples: 3 });
+      await socket.settle(20);
+      app.advanceClock(5_000);
+    }
+    const changed = await socket.waitFor('tier.changed');
+    expect(changed).toMatchObject({
+      autoTier: 'full',
+      effectiveTier: 'full',
+      reason: 'hysteresis',
+      candlesUpdateMs: 100,
+      tradesBatchMs: 200,
+    });
+  });
+
+  it('holds three tiers at once with identical candle values (docs/03 §8)', async () => {
+    const { app, url } = await bootstrap();
+    const tiers = ['full', 'degraded', 'minimal'] as const;
+    const clients: { tier: (typeof tiers)[number]; socket: TestSocket }[] = [];
+    for (const tier of tiers) {
+      const socket = await connect(url, await mintTicket(app));
+      await socket.waitFor('hello');
+      socket.send({ type: 'debug.tier_override', tier });
+      // No tier.changed for the degraded client: overriding to the tier it is
+      // already on does not move effectiveTier, and the frame says so by absence.
+      await socket.settle(20);
+      expect(socket.received('tier.changed').length, tier).toBe(tier === 'degraded' ? 0 : 1);
+      socket.send({ type: 'subscribe', symbol: 'BTC-USD', channels: ['candles'], interval: '1s' });
+      await socket.waitFor('subscribed');
+      clients.push({ tier, socket });
+    }
+
+    app.pump(400);
+    await clients[2]?.socket.until(
+      () => (clients[2]?.socket.received('candles.update').length ?? 0) >= 3,
+    );
+    await clients[0]?.socket.settle(100);
+
+    const finalsFor = (socket: TestSocket): string[] =>
+      socket
+        .received('candles.update')
+        .flatMap((frame) => frame.candles)
+        .filter((candle) => candle.final)
+        .map((candle) => JSON.stringify(candle));
+
+    const [full, degraded, minimal] = clients.map((client) => finalsFor(client.socket));
+    expect(minimal?.length ?? 0).toBeGreaterThan(2);
+    // Cadence differs, values do not.
+    expect(full?.slice(0, minimal?.length)).toEqual(minimal);
+    expect(degraded?.slice(0, minimal?.length)).toEqual(minimal);
+    expect(clients[0]?.socket.received('candles.update').length ?? 0).toBeGreaterThan(
+      clients[2]?.socket.received('candles.update').length ?? 0,
+    );
+  });
+});
+
 describe('heartbeat', () => {
   it('closes a silent socket with 4000 and leaves a talking one alone', async () => {
-    const { app, url } = await bootstrap({ heartbeatTimeoutMs: 120, heartbeatCheckMs: 20 });
+    const { app, url } = await bootstrap({ heartbeatCheckMs: 20 });
 
     const chatty = await connect(url, await mintTicket(app));
     await chatty.waitFor('hello');
-    const keepAlive = setInterval(() => chatty.send({ type: 'ping', id: 'keep' }), 40);
-
     const silent = await connect(url, await mintTicket(app));
     await silent.waitFor('hello');
 
+    // 46 s of connection time, in four steps, with one socket still talking.
+    for (let step = 0; step < 4; step += 1) {
+      chatty.send({ type: 'ping', id: `keep-${step}` });
+      await chatty.settle(30);
+      app.advanceClock(11_500);
+    }
+    await silent.settle(60);
+
     expect((await silent.waitForClose()).code).toBe(CLOSE_CODES.HEARTBEAT_TIMEOUT);
-    clearInterval(keepAlive);
     expect(chatty.isOpen).toBe(true);
   });
 });

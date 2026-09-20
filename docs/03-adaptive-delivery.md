@@ -414,6 +414,20 @@ delta silently corrupts the client's book; a closed socket triggers a clean, obs
 
 Close with `BACKPRESSURE_CLOSE` so the reason is visible in logs and metrics.
 
+### Thresholds
+
+Chosen in P6, measured against `bufferedAmount`:
+
+| Threshold | Bytes | Behaviour |
+| --- | ---: | --- |
+| Soft | `256 KiB` | Stop sending `trades.batch`; candles keep coalescing; deltas unaffected |
+| Hard | `1 MiB` | `error: BACKPRESSURE_CLOSE`, then close `4409` |
+
+A 25-level `book.delta` is roughly 200–600 bytes and a symbol emits about twenty per second, so
+`256 KiB` is around twenty seconds of one symbol's deltas — far past "briefly congested" and well
+short of a hair trigger. `1 MiB` is roughly eighty seconds of backlog: at that point there is no
+lever left, because deltas may not be dropped.
+
 ---
 
 ## 10. What the tier does *not* affect
@@ -432,9 +446,9 @@ after the canonical values already exist.
 
 ## Open questions
 
-- `bufferedAmount` thresholds are policy, not yet numbers — pick during P6 and record them here.
-
 **Resolved:**
+
+- `bufferedAmount` thresholds: `256 KiB` soft, `1 MiB` hard (§9).
 
 - Trade-batch cadence **is** tier-scaled (§2), not flat.
 - `tier.changed` carries the reason (`hysteresis` / `override` / `missing_reports`).

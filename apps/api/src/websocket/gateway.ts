@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import websocketPlugin from '@fastify/websocket';
 import type { ServerFrame } from '@repo/protocol';
-import { CLOSE_CODES, PROTOCOL_VERSION } from '@repo/protocol';
+import { CLOSE_CODES, PROTOCOL_VERSION, TIER_CADENCE_MS } from '@repo/protocol';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../app/context.js';
 import type { MarketRuntime } from '../app/market-runtime.js';
 import { METRIC } from '../observability/metrics.js';
 import { ConnectionSession } from './connection-session.js';
+import { TierController } from './tier-controller.js';
 import { MarketDispatcher, type ConnectionHandle } from './dispatcher.js';
 import { handleClientFrame } from './frame-handler.js';
 import { ConnectionRateLimiter } from './rate-limiter.js';
@@ -19,6 +20,12 @@ export interface GatewayOptions {
   /** Overridable so the close path can be tested without waiting 45 s. */
   readonly heartbeatTimeoutMs?: number;
   readonly heartbeatCheckMs?: number;
+  /**
+   * The clock every time-based per-connection decision reads: delivery cadence,
+   * token-bucket refill, the heartbeat, and the missing-report ladder. One
+   * clock, so tests can advance them together.
+   */
+  readonly now?: () => number;
 }
 
 /**
@@ -35,7 +42,8 @@ export async function registerWebSocketGateway(
 ): Promise<MarketDispatcher> {
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
   const heartbeatCheckMs = options.heartbeatCheckMs ?? HEARTBEAT_CHECK_MS;
-  const dispatcher = new MarketDispatcher(context.metrics);
+  const now = options.now ?? Date.now;
+  const dispatcher = new MarketDispatcher(context.metrics, now);
   await server.register(websocketPlugin, {
     options: { maxPayload: context.websocket.maxFrameBytes },
   });
@@ -98,15 +106,53 @@ export async function registerWebSocketGateway(
       rateLimiter: new ConnectionRateLimiter({
         globalPerSecond: context.websocket.globalFramesPerSecond,
         strikeLimit: context.websocket.strikeLimit,
+        now,
       }),
       maxSubscriptions: context.websocket.maxSubscriptions,
-      now: Date.now(),
+      now: now(),
     });
 
+    const tiers = new TierController(session);
     const handle: ConnectionHandle = {
       session,
       isOpen: () => socket.readyState === socket.OPEN,
       send,
+      bufferedAmount: () => socket.bufferedAmount,
+      close,
+    };
+
+    /** Emitted whenever `effectiveTier` moves, so the UI never has to infer it. */
+    const announceTier = (update: {
+      changed: boolean;
+      autoTier: typeof session.autoTier;
+      effectiveTier: typeof session.autoTier;
+      reason: 'hysteresis' | 'override' | 'missing_reports';
+    }): void => {
+      if (!update.changed) return;
+      const cadence = TIER_CADENCE_MS[update.effectiveTier];
+      send({
+        type: 'tier.changed',
+        autoTier: update.autoTier,
+        override: session.tierOverride,
+        effectiveTier: update.effectiveTier,
+        reason: update.reason,
+        candlesUpdateMs: cadence.candlesUpdateMs,
+        tradesBatchMs: cadence.tradesBatchMs,
+      });
+      context.metrics.increment(METRIC.tierChanges, { reason: update.reason });
+      refreshGauges();
+      request.log.info(
+        {
+          event: 'tier.changed',
+          connectionId: session.connectionId,
+          to: update.effectiveTier,
+          autoTier: update.autoTier,
+          reason: update.reason,
+          rttMs: session.rttMs,
+          jitterMs: session.jitterMs,
+        },
+        'tier changed',
+      );
     };
     dispatcher.add(handle);
     dispatcherHandles.add(handle);
@@ -122,15 +168,20 @@ export async function registerWebSocketGateway(
       type: 'hello',
       protocolVersion: PROTOCOL_VERSION,
       connectionId: session.connectionId,
-      serverTime: Date.now(),
+      serverTime: now(),
       tier: session.effectiveTier,
       symbols: context.repository.markets(),
     });
 
+    // One timer per connection covers both clocks: the heartbeat close and the
+    // missing-report ladder (docs/03-adaptive-delivery.md §6).
     const heartbeat = setInterval(() => {
-      if (Date.now() - session.lastInboundAt > heartbeatTimeoutMs) {
+      const at = now();
+      if (at - session.lastInboundAt > heartbeatTimeoutMs) {
         close(CLOSE_CODES.HEARTBEAT_TIMEOUT, 'heartbeat timeout');
+        return;
       }
+      announceTier(tiers.applySilence(at));
     }, heartbeatCheckMs);
     heartbeat.unref?.();
 
@@ -143,8 +194,11 @@ export async function registerWebSocketGateway(
         enableDebugControls: context.http.enableDebugControls,
         send,
         close,
-        now: Date.now,
+        now,
         onSubscriptionsChanged: refreshGauges,
+        onNetworkReport: (rttMs, jitterMs) =>
+          announceTier(tiers.applyReport(rttMs, jitterMs, now())),
+        onTierOverride: (tier) => announceTier(tiers.setOverride(tier)),
       });
     });
 

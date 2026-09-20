@@ -1,5 +1,7 @@
 import type { Channel, Interval, MarketSymbol, Tier } from '@repo/protocol';
 import { INITIAL_TIER } from '@repo/protocol';
+import type { DomainCandle } from '../market/candles/candle.js';
+import type { DomainTrade } from '../market/events.js';
 import type { ConnectionRateLimiter } from './rate-limiter.js';
 
 /**
@@ -8,12 +10,37 @@ import type { ConnectionRateLimiter } from './rate-limiter.js';
  *
  * Tier lives on the session; delivery state lives on the subscription. That
  * split is what lets one connection hold five symbols without five tiers.
- * The scheduler fields below are populated in P6; P5 sends as data arrives.
  */
-export interface SymbolSubscription {
+export class SymbolSubscription {
   readonly symbol: MarketSymbol;
   channels: Set<Channel>;
   subscribedInterval: Interval | null;
+
+  lastCandleSentAt = 0;
+  /** Accumulates: every closed candle is delivered exactly once (I2). */
+  pendingFinalCandles: DomainCandle[] = [];
+  /** Coalesces: only the newest version of the open bucket matters. */
+  latestActiveCandle: DomainCandle | null = null;
+
+  lastTradeBatchSentAt = 0;
+  pendingTrades: DomainTrade[] = [];
+
+  constructor(symbol: MarketSymbol, channels: readonly Channel[], interval: Interval | null) {
+    this.symbol = symbol;
+    this.channels = new Set(channels);
+    this.subscribedInterval = interval;
+  }
+
+  /**
+   * Switching interval discards candle state for the old one. Merging a `1s`
+   * bucket into a `1m` stream would be a silently wrong chart.
+   */
+  setInterval(interval: Interval | null): void {
+    if (interval === this.subscribedInterval) return;
+    this.subscribedInterval = interval;
+    this.pendingFinalCandles = [];
+    this.latestActiveCandle = null;
+  }
 }
 
 export class ConnectionSession {
@@ -68,16 +95,12 @@ export class ConnectionSession {
   subscribe(symbol: MarketSymbol, channels: readonly Channel[], interval: Interval | null): void {
     const existing = this.subscriptions.get(symbol);
     if (existing === undefined) {
-      this.subscriptions.set(symbol, {
-        symbol,
-        channels: new Set(channels),
-        subscribedInterval: interval,
-      });
+      this.subscriptions.set(symbol, new SymbolSubscription(symbol, channels, interval));
       return;
     }
     existing.channels = new Set(channels);
     // Re-subscribing without candles must not silently keep a stale interval.
-    existing.subscribedInterval = channels.includes('candles') ? interval : null;
+    existing.setInterval(channels.includes('candles') ? interval : null);
   }
 
   unsubscribe(symbol: string): boolean {
