@@ -77,13 +77,6 @@ jobs:
             fi
           done
 
-      - name: Inspect GitHub OIDC Token Claims
-        shell: bash
-        run: |
-          token="$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')"
-          echo "=== Token Payload Claims ==="
-          echo "$token" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{sub, aud, iss, repository, repository_owner, environment}' || true
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -119,8 +112,9 @@ jobs:
 
           run_ssm() {
             local remote_command="$1" comment="$2" command_id status
-            local parameters
-            parameters="$(jq -cn --arg command "$(printf 'bash -lc %q' "$remote_command")" '{commands: [$command]}')"
+            local encoded parameters
+            encoded="$(printf '%s' "$remote_command" | base64 | tr -d '\r\n')"
+            parameters="$(jq -cn --arg cmd "echo '$encoded' | base64 -d | bash" '{commands: [$cmd]}')"
             command_id="$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" \
               --document-name AWS-RunShellScript --comment "$comment" --parameters "$parameters" \
               --query 'Command.CommandId' --output text)"
@@ -183,8 +177,10 @@ jobs:
           set -euo pipefail
           release_dir="/opt/exaint/releases/${IMAGE_DIGEST#sha256:}"
           run_ssm() {
-            local remote_command="$1" comment="$2" command_id status parameters
-            parameters="$(jq -cn --arg command "$(printf 'bash -lc %q' "$remote_command")" '{commands: [$command]}')"
+            local remote_command="$1" comment="$2" command_id status
+            local encoded parameters
+            encoded="$(printf '%s' "$remote_command" | base64 | tr -d '\r\n')"
+            parameters="$(jq -cn --arg cmd "echo '$encoded' | base64 -d | bash" '{commands: [$cmd]}')"
             command_id="$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" \
               --document-name AWS-RunShellScript --comment "$comment" --parameters "$parameters" \
               --query 'Command.CommandId' --output text)"
