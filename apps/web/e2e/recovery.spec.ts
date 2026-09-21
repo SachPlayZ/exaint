@@ -94,6 +94,7 @@ test.describe('E2E Recovery & Terminal Invariants', () => {
     // Confirm market tape, book, and trades switch cleanly
     await expect(page.locator('.market-tape strong')).toHaveText('HYPE-USD', { timeout: 10_000 });
     await expect(page.locator('.book-status')).toHaveText('SYNCHRONIZED', { timeout: 10_000 });
+    await expect(page.locator('.status-pill')).toContainText('LIVE', { timeout: 10_000 });
     await expect(page.locator('.book-row.book-bid')).toHaveCount(12);
 
     // Reload and assert watchlist order survived in localStorage
@@ -133,6 +134,15 @@ test.describe('E2E Recovery & Terminal Invariants', () => {
         return document.documentElement.scrollWidth > document.documentElement.clientWidth;
       });
       expect(hasHorizontalScroll, `Horizontal scroll detected at ${viewport.width}px`).toBe(false);
+
+      if (viewport.width < 1024) {
+        await expect(page.locator('.live-cluster')).toBeHidden();
+        const mobileMenu = page.locator('.mobile-header-menu');
+        await expect(mobileMenu.locator('summary')).toBeVisible();
+        await mobileMenu.locator('summary').click();
+        await expect(mobileMenu.locator('.mobile-status')).toContainText('LIVE');
+        await mobileMenu.locator('summary').click();
+      }
     }
   });
 

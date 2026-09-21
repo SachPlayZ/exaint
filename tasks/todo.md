@@ -875,3 +875,73 @@ workflow YAML parsing, and `git diff --check` all pass.
 
 **Risks / follow-ups.** No AWS account, EC2 instance, DNS, GitHub production environment, or Vercel
 project was available in this workspace, so live deployment and the recording remain unverified.
+
+## README submission coverage
+
+### Plan
+
+- [x] Add a direct repository link.
+- [x] Document REST routes and WebSocket frame types.
+- [x] Document the debug drawer and tier overrides.
+
+### Verification
+
+- [x] Run Prettier and `git diff --check`.
+- [x] Check links, headings, routes, and frame names against protocol docs.
+
+### Review
+
+#### Changed
+
+Added a direct repository link, a compact REST/WebSocket protocol reference, and debug-control
+semantics to `README.md`.
+
+#### Verified
+
+Prettier and `git diff --check` pass. Route and frame names match `docs/01-protocol.md`; the local
+protocol-doc link resolves.
+
+#### Risks
+
+None. Documentation-only change.
+
+#### Follow-ups
+
+Record and link the demo video separately.
+
+## Mobile header and ticker synchronization
+
+### Plan
+
+- [x] Reproduce the mobile header overflow and ticker-switch state race.
+- [x] Move mobile connection metrics into an accessible hamburger menu.
+- [x] Fix synchronizer removal ordering so completed ticker switches return to `LIVE`.
+- [x] Add regression coverage for the header and state transition.
+
+### Verification
+
+- [x] Run focused web tests, lint, typecheck, and build.
+- [x] Verify 375px/660px layouts and repeated ticker switches in a browser.
+- [x] Inspect the final diff and preserve unrelated changes.
+
+### Review
+
+#### Changed
+
+Collapsed sub-1024px connection metrics into a 44px hamburger menu. Removed dead symbol
+synchronizers before resetting them so callbacks evaluate the remaining registry and restore
+`LIVE` after ticker switches. Added unit, component, and E2E regressions.
+
+#### Verified
+
+`pnpm lint`, `pnpm typecheck`, `pnpm test` (343 tests), `pnpm build`, and `pnpm test:e2e` (5 tests)
+pass. Manual Chromium checks at 375px and 660px showed zero horizontal overflow; five consecutive
+ticker switches at each width returned to `LIVE / SYNCHRONIZED` in 58–162ms.
+
+#### Risks
+
+None known. The mobile menu overlays content intentionally and leaves the market/price row fixed.
+
+#### Follow-ups
+
+Deploy the frontend and API changes before re-recording the demo.

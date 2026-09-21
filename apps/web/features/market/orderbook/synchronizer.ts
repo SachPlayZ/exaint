@@ -187,8 +187,14 @@ export class OrderBookRegistry {
   }
 
   remove(symbol: string): void {
-    this.#synchronizers.get(symbol)?.reset();
+    const synchronizer = this.#synchronizers.get(symbol);
+    if (synchronizer === undefined) return;
+
+    // Remove first so the reset callback evaluates the registry that remains.
+    // Resetting while the dead symbol is still tracked can push a completed
+    // symbol switch back to SYNCING with no later transition to LIVE.
     this.#synchronizers.delete(symbol);
+    synchronizer.reset();
   }
 
   /** True when every tracked symbol has a merged, contiguous book. */

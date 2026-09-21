@@ -227,4 +227,20 @@ describe('per-symbol isolation', () => {
     expect(registry.symbols()).toEqual([]);
     expect(sync.status).toBe('IDLE');
   });
+
+  it('reports synchronization from the post-removal registry state', () => {
+    const observations: boolean[] = [];
+    const registry = new OrderBookRegistry(() => observations.push(registry.allSynchronized()));
+
+    for (const symbol of ['BTC-USD', 'SOL-USD']) {
+      const sync = registry.for(symbol);
+      sync.applySnapshot(snapshot(100, { symbol }), sync.beginSync());
+    }
+
+    observations.length = 0;
+    registry.remove('BTC-USD');
+
+    expect(registry.symbols()).toEqual(['SOL-USD']);
+    expect(observations).toEqual([true]);
+  });
 });

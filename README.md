@@ -11,7 +11,7 @@
 [![Fastify](https://img.shields.io/badge/Fastify-5-black?style=flat-square&logo=fastify&logoColor=white)](https://fastify.dev)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2-ef4444?style=flat-square&logo=turborepo&logoColor=white)](https://turbo.build)
 
-[Live Deployment](#live-deployment) • [Architecture](#architecture--system-design) • [Core Invariants](#core-invariants-the-hiring-signal) • [Adaptive Protocol](#adaptive-delivery-protocol) • [Quickstart](#local-development) • [Deployment](#deployment-architecture)
+[GitHub Repository](https://github.com/SachPlayZ/exaint) • [Live Deployment](#live-deployment) • [Architecture](#architecture--system-design) • [Adaptive Protocol](#adaptive-delivery-protocol) • [Quickstart](#local-development) • [Deployment](#deployment-architecture)
 
 </div>
 
@@ -201,6 +201,49 @@ The backend generates synthetic market activity across five distinct assets with
 
 ---
 
+## REST & WebSocket Protocols
+
+REST bootstraps the terminal and repairs state; the WebSocket carries live updates. Every network
+boundary is validated by the shared Zod schemas in `@repo/protocol`.
+
+| Method | Route | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/v1/auth/ticket` | Mint a short-lived, single-use WebSocket connect ticket. |
+| `GET` | `/v1/markets` | Return the registry that drives the frontend symbol list. |
+| `GET` | `/v1/markets/:symbol/book` | Return a 25-level-per-side snapshot anchored to a sequence. |
+| `GET` | `/v1/markets/:symbol/candles?interval=1s&limit=300` | Return ordered candle history plus the active candle. Intervals are `1s`, `5s`, or `1m`; limits above `300` are clamped. |
+| `GET` | `/healthz` / `/readyz` / `/metrics` | Expose liveness, market readiness, and Prometheus metrics. |
+
+The browser connects directly to `/v1/ws?ticket=<ticket>`. Every JSON frame has a `type`
+discriminator; identifiers and fixed-point values remain decimal strings on the wire.
+
+**Client → server**
+
+| Frame | Purpose |
+| :--- | :--- |
+| `subscribe` / `unsubscribe` | Start or stop channels for one symbol. |
+| `set_interval` | Change the subscribed candle interval. |
+| `ping` | Send an application-level RTT probe. |
+| `network.report` | Report measured RTT and jitter to the server. |
+| `debug.tier_override` | Force a delivery tier or return to automatic selection. |
+
+**Server → client**
+
+| Frame | Purpose |
+| :--- | :--- |
+| `hello` / `subscribed` | Initialize the connection and acknowledge subscriptions. |
+| `pong` | Echo a latency probe. |
+| `trades.batch` | Deliver ordered trades for one symbol. |
+| `book.delta` | Deliver a sequenced order-book mutation. |
+| `candles.update` | Deliver active or finalized candles for one symbol and interval. |
+| `tier.changed` | Report the server-owned effective delivery tier. |
+| `error` | Reject an invalid or rate-limited frame without immediately killing the socket. |
+
+Full schemas, examples, status codes, and close codes are defined in
+[`docs/01-protocol.md`](./docs/01-protocol.md).
+
+---
+
 ## Adaptive Delivery Protocol
 
 Clients continuously report network health, and the server adapts data delivery rates accordingly:
@@ -222,6 +265,20 @@ Clients continuously report network health, and the server adapts data delivery 
    - Level 1 ($64\text{ KB}$): Coalesce intermediate candle updates.
    - Level 2 ($256\text{ KB}$): Drop non-essential trade batches.
    - Level 3 ($1\text{ MB}$): **Never drop order book deltas**. Close socket with code `4409 (SLOW_CONSUMER)` forcing clean resynchronization.
+
+---
+
+## Debug Controls
+
+Expand **Network & Delivery** to inspect connection state, book sequence, latest trade id, RTT,
+jitter, automatic/effective tiers, and target versus observed delivery rates. The drawer offers
+`Auto`, `Full`, `Degraded`, and `Minimal`: the three named tiers request a connection-scoped
+effective-tier override, while `Auto` clears it. The server continues measuring RTT and jitter and
+maintaining its automatic tier while an override is active; the client never chooses its own
+automatic tier.
+
+Overrides are accepted only when the API runs with `ENABLE_DEBUG_CONTROLS=true`. Keep this enabled
+for a demo deployment and disable it where manual delivery-tier control should not be exposed.
 
 ---
 

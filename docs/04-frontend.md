@@ -691,6 +691,8 @@ Responsive is a requirement, not a nicety. Three breakpoints:
 Rules:
 
 - No horizontal page scroll at any width. 16px side gutter on narrow screens.
+- Below `1024px`, the header keeps market and price visible while connection status, RTT, and tier
+  move into a 44px-minimum hamburger menu. The full brand and metric cluster return at `1024px`.
 - The chart re-fits on container resize via `ResizeObserver`, debounced to one frame — not on
   `window.resize`, which misses layout-only changes.
 - Ten bids and ten asks stay visible at every breakpoint. If space is tight, the trade list yields

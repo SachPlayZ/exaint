@@ -50,3 +50,11 @@ and ended a chain of wrong guesses.
 shape. Phase gate [`../AGENTS.md` §6.5](../AGENTS.md#6-definition-of-done-phase-gate) already says
 "demonstrated, not assumed" — this is what that means for output a person reads.
 
+## 2026-09-21 — Exercise every visible state in race-prone UI flows
+
+**What happened:** One production ticker switch recovered, but another response ordering left the
+book `SYNCHRONIZED` while the header stayed `SYNCING`; the narrow header also only passed overflow
+checks without being visually usable.
+**Rule:** For switch/recovery UI, test multiple symbols and assert both domain and connection states;
+inspect the reported viewport visually, not only `scrollWidth`.
+**Applies to:** `apps/web` symbol switching, responsive layout, and E2E coverage.
