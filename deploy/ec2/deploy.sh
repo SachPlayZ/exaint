@@ -33,7 +33,7 @@ compose() {
   [[ -f "$api_env" ]] && env_args=(--env-file "$api_env")
   local domain
   domain="$(api_domain_from "$api_env" 2>/dev/null || true)"
-  API_IMAGE="$image" API_DOMAIN="${domain:-api.exaint.sachindra.codes}" docker compose \
+  API_IMAGE="$image" API_DOMAIN="${domain:-exaint-api.sachindra.codes}" docker compose \
     --project-name exaint \
     --file "${directory}/compose.yml" \
     "${env_args[@]}" "$@"
