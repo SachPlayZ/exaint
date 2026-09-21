@@ -23,6 +23,8 @@ export class MarketSimulator {
   readonly #prng: Prng;
   #fairValue: bigint;
   #lastNoiseSide: Side | null = null;
+  #trendVelocity = 0n;
+  #regimeTicksRemaining = 0;
   readonly #floor: bigint;
   readonly #ceiling: bigint;
 
@@ -55,8 +57,12 @@ export class MarketSimulator {
   tick(book: OrderBook, timestamp: number, allocateTradeId: () => bigint): DomainTrade[] {
     const trades: DomainTrade[] = [];
 
+    // Advance or select the active market regime (trend vs consolidation).
+    this.#updateRegime();
+
+    const randomStep = this.#prng.nextBellBetween(this.config.volatility);
     this.#fairValue = clampBigInt(
-      this.#fairValue + this.#prng.nextBellBetween(this.config.volatility),
+      this.#fairValue + randomStep + this.#trendVelocity,
       this.#floor,
       this.#ceiling,
     );
@@ -65,6 +71,12 @@ export class MarketSimulator {
     // Price discovery: lift stale offers, hit stale bids.
     this.#fill(book, trades, 'buy', null, desiredAsk, timestamp, allocateTradeId);
     this.#fill(book, trades, 'sell', null, desiredBid, timestamp, allocateTradeId);
+
+    // Liquidation cascades / multi-level sweep events:
+    // Occasional forced flow sweeps 2–4 consecutive resting levels, shifting the spread.
+    if (this.config.volatility > 0n && this.#prng.nextFloat() < 0.018) {
+      this.#executeCascade(book, trades, timestamp, allocateTradeId);
+    }
 
     // Noise: a trade that is not explained by the fair value moving.
     if (this.#prng.nextFloat() < this.config.tradeProbability) {
@@ -82,6 +94,89 @@ export class MarketSimulator {
     book.trim();
 
     return trades;
+  }
+
+  /**
+   * Selects or steps the active market regime:
+   * - 50%: range-bound consolidation (zero trend drift).
+   * - 25%: bullish trend push (positive drift pulling fair value up).
+   * - 25%: bearish trend pull (negative drift pulling fair value down).
+   */
+  #updateRegime(): void {
+    if (this.config.volatility === 0n) {
+      this.#trendVelocity = 0n;
+      this.#regimeTicksRemaining = 0;
+      return;
+    }
+
+    this.#regimeTicksRemaining -= 1;
+    if (this.#regimeTicksRemaining <= 0) {
+      const roll = this.#prng.nextFloat();
+      if (roll < 0.5) {
+        // Consolidation: 30 to 80 ticks (1.5s to 4.0s)
+        this.#trendVelocity = 0n;
+        this.#regimeTicksRemaining = this.#prng.nextIntBetween(30, 80);
+      } else if (roll < 0.75) {
+        // Bullish push: 20 to 50 ticks (1.0s to 2.5s)
+        this.#trendVelocity = this.config.volatility;
+        this.#regimeTicksRemaining = this.#prng.nextIntBetween(20, 50);
+      } else {
+        // Bearish pullback: 20 to 50 ticks (1.0s to 2.5s)
+        this.#trendVelocity = -this.config.volatility;
+        this.#regimeTicksRemaining = this.#prng.nextIntBetween(20, 50);
+      }
+    }
+  }
+
+  /**
+   * Simulates a liquidation cascade or aggressive whale sweep:
+   * Consumes 2 to 4 consecutive price levels from the opposite side of the book,
+   * moving the touch and causing the price ladder to visibly advance.
+   */
+  #executeCascade(
+    book: OrderBook,
+    sink: DomainTrade[],
+    timestamp: number,
+    allocateTradeId: () => bigint,
+  ): void {
+    // Cascade direction is biased towards the prevailing trend.
+    let cascadeSide: Side;
+    if (this.#trendVelocity > 0n) {
+      cascadeSide = this.#prng.nextFloat() < 0.75 ? 'buy' : 'sell';
+    } else if (this.#trendVelocity < 0n) {
+      cascadeSide = this.#prng.nextFloat() < 0.75 ? 'sell' : 'buy';
+    } else {
+      cascadeSide = this.#prng.nextBoolean() ? 'buy' : 'sell';
+    }
+
+    const opposite: BookSide = cascadeSide === 'buy' ? 'ask' : 'bid';
+    const prices = book.prices(opposite);
+    if (prices.length === 0) return;
+
+    const levelsToSweep = minBigInt(BigInt(this.#prng.nextIntBetween(2, 4)), BigInt(prices.length));
+
+    for (let index = 0; index < Number(levelsToSweep); index += 1) {
+      const price = prices[index];
+      if (price === undefined) break;
+      const available = book.quantityAt(opposite, price);
+      if (available <= 0n) continue;
+
+      book.setLevel(opposite, price, 0n);
+      sink.push({
+        symbol: this.config.symbol,
+        tradeId: allocateTradeId(),
+        timestamp,
+        side: cascadeSide,
+        price,
+        quantity: available,
+      });
+    }
+
+    // Pull fair value towards the swept touch so the market consolidates at the new level.
+    const newTouch = book.best(opposite);
+    if (newTouch !== undefined) {
+      this.#fairValue = clampBigInt(newTouch, this.#floor, this.#ceiling);
+    }
   }
 
   /** Grid-aligned best bid and best ask implied by the current fair value. */

@@ -1,7 +1,8 @@
 @import 'tailwindcss';
-@import './terminal.css';
-@import './terminal-panels.css';
-@import './terminal-responsive.css';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
   color-scheme: dark;
@@ -19,6 +20,89 @@
   --amber: #f0b866;
   --display: 'Avenir Next Condensed', 'Franklin Gothic Medium', 'Arial Narrow', sans-serif;
   --mono: 'SFMono-Regular', 'Cascadia Code', 'Liberation Mono', monospace;
+
+  /* shadcn semantic tokens mapped to dark terminal theme */
+  --background: #080a09;
+  --foreground: #e9eee9;
+  --card: #0d100f;
+  --card-foreground: #e9eee9;
+  --popover: #0d100f;
+  --popover-foreground: #e9eee9;
+  --primary: #b9ff42;
+  --primary-foreground: #080a09;
+  --secondary: #121614;
+  --secondary-foreground: #e9eee9;
+  --muted-foreground: #829087;
+  --accent: #121614;
+  --accent-foreground: #b9ff42;
+  --destructive: #ff765f;
+  --border: #252c28;
+  --input: #252c28;
+  --ring: #b9ff42;
+  --radius: 0.375rem;
+}
+
+.dark {
+  --background: #080a09;
+  --foreground: #e9eee9;
+  --card: #0d100f;
+  --card-foreground: #e9eee9;
+  --popover: #0d100f;
+  --popover-foreground: #e9eee9;
+  --primary: #b9ff42;
+  --primary-foreground: #080a09;
+  --secondary: #121614;
+  --secondary-foreground: #e9eee9;
+  --muted-foreground: #829087;
+  --accent: #121614;
+  --accent-foreground: #b9ff42;
+  --destructive: #ff765f;
+  --border: #252c28;
+  --input: #252c28;
+  --ring: #b9ff42;
+}
+
+@theme inline {
+  --font-heading: var(--display);
+  --font-sans: var(--display);
+  --font-display: var(--display);
+  --font-mono: var(--mono);
+
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-ask: var(--ask);
+  --color-bid: var(--bid);
+  --color-amber: var(--amber);
+  --color-ink: var(--ink);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-line: var(--line);
+  --color-line-bright: var(--line-bright);
+  --color-paper: var(--paper);
+  --color-terminal-muted: var(--muted);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --radius-sm: calc(var(--radius) * 0.75);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.25);
 }
 
 * {
@@ -27,11 +111,14 @@
 
 html {
   background: var(--ink);
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
   background:
     linear-gradient(rgba(185, 255, 66, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(185, 255, 66, 0.018) 1px, transparent 1px), var(--ink);
@@ -50,4 +137,37 @@ button:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--signal);
   outline-offset: 2px;
+}
+
+/* Scrollbar utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.terminal-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.terminal-scrollbar::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+.terminal-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 2px;
+}
+.terminal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--line-bright);
+}
+
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
 }

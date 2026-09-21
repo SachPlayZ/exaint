@@ -8,6 +8,7 @@ import {
   writeWatchlistOrder,
   type WatchlistOrderStorage,
 } from '../watchlist/order';
+import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'exaint.watchlist.order.v1';
 
@@ -43,12 +44,20 @@ export function Watchlist({ markets, selectedSymbol, onSelect }: WatchlistProps)
   };
 
   return (
-    <nav className="watchlist" aria-label="Market watchlist">
-      <span className="watchlist-label">WATCH / 05</span>
-      <div className="watchlist-track">
+    <nav
+      className="watchlist shrink-0 h-9 bg-surface/95 border border-line flex items-stretch my-1"
+      aria-label="Market watchlist"
+    >
+      <span className="watchlist-label grid place-items-center px-3 border-r border-line text-[8px] text-muted-foreground tracking-widest shrink-0 uppercase select-none">
+        WATCH / 05
+      </span>
+      <div className="watchlist-track flex-1 flex overflow-x-auto no-scrollbar">
         {orderedMarkets.map((market, index) => (
           <div
-            className={`watch-item ${market.symbol === selectedSymbol ? 'selected' : ''}`}
+            className={cn(
+              'watch-item flex shrink-0 min-w-[112px] border-r border-line bg-transparent transition-colors',
+              market.symbol === selectedSymbol && 'selected bg-signal/[0.07]',
+            )}
             key={market.symbol}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
@@ -59,7 +68,7 @@ export function Watchlist({ markets, selectedSymbol, onSelect }: WatchlistProps)
           >
             <button
               aria-label={`Reorder ${market.symbol}`}
-              className="drag-handle"
+              className="drag-handle size-9 min-w-9 flex items-center justify-center border-r border-line text-muted-foreground hover:text-signal cursor-grab active:cursor-grabbing text-xs transition-colors"
               draggable
               onClick={(event) => event.stopPropagation()}
               onDragEnd={() => setDraggedIndex(null)}
@@ -79,9 +88,22 @@ export function Watchlist({ markets, selectedSymbol, onSelect }: WatchlistProps)
             >
               ⠿
             </button>
-            <button className="watch-select" onClick={() => onSelect(market)} type="button">
-              <span>{market.symbol.split('-')[0]}</span>
-              <small>{market.symbol}</small>
+            <button
+              className="watch-select flex-1 px-2.5 flex flex-col justify-center text-left hover:bg-white/[0.02] transition-colors"
+              onClick={() => onSelect(market)}
+              type="button"
+            >
+              <span
+                className={cn(
+                  'font-display font-extrabold text-xs tracking-wide leading-none',
+                  market.symbol === selectedSymbol ? 'text-signal' : 'text-paper',
+                )}
+              >
+                {market.symbol.split('-')[0]}
+              </span>
+              <small className="text-[7.5px] text-muted-foreground leading-none mt-1">
+                {market.symbol}
+              </small>
             </button>
           </div>
         ))}

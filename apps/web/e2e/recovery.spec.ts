@@ -135,4 +135,50 @@ test.describe('E2E Recovery & Terminal Invariants', () => {
       expect(hasHorizontalScroll, `Horizontal scroll detected at ${viewport.width}px`).toBe(false);
     }
   });
+
+  test('fits entirely within desktop viewport with zero vertical scroll', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.status-pill')).toContainText('LIVE', { timeout: 15_000 });
+
+    const desktopViewports = [
+      { width: 1280, height: 900 },
+      { width: 1440, height: 900 },
+      { width: 1920, height: 1080 },
+    ];
+
+    for (const viewport of desktopViewports) {
+      await page.setViewportSize(viewport);
+      await page.waitForTimeout(200);
+
+      const hasScroll = await page.evaluate(() => {
+        const docScroll =
+          document.documentElement.scrollHeight > document.documentElement.clientHeight;
+        const bodyScroll = document.body.scrollHeight > document.body.clientHeight;
+        return docScroll || bodyScroll;
+      });
+      expect(hasScroll, `Page scroll detected at ${viewport.width}x${viewport.height}`).toBe(false);
+    }
+
+    // Toggle debug drawer open and closed; interface must stay within viewport without page scroll
+    const debugSummary = page.locator('.debug-drawer summary');
+    await debugSummary.click();
+    await page.waitForTimeout(200);
+    let hasScrollWithOpenDrawer = await page.evaluate(() => {
+      return (
+        document.documentElement.scrollHeight > document.documentElement.clientHeight ||
+        document.body.scrollHeight > document.body.clientHeight
+      );
+    });
+    expect(hasScrollWithOpenDrawer, 'Page scroll detected when debug drawer opened').toBe(false);
+
+    await debugSummary.click();
+    await page.waitForTimeout(200);
+    hasScrollWithOpenDrawer = await page.evaluate(() => {
+      return (
+        document.documentElement.scrollHeight > document.documentElement.clientHeight ||
+        document.body.scrollHeight > document.body.clientHeight
+      );
+    });
+    expect(hasScrollWithOpenDrawer, 'Page scroll detected when debug drawer closed').toBe(false);
+  });
 });

@@ -261,3 +261,48 @@ describe('five markets, five personalities (docs/02-market-domain.md §2)', () =
     }
   });
 });
+
+describe('dynamic order book ladder and cascades', () => {
+  it('actively discovers new price levels and shifts the best bid/ask over time', () => {
+    const engine = buildEngine(1337n);
+    const seenBestBids = new Map<MarketSymbol, Set<bigint>>();
+    for (const s of DEFAULT_SYMBOLS) seenBestBids.set(s, new Set());
+
+    for (let tick = 0; tick < 600; tick += 1) {
+      engine.advance((result) => {
+        const symbolEngine = engine.registry.get(result.symbol);
+        const bestBid = symbolEngine?.book.bestBid();
+        if (bestBid !== undefined) {
+          seenBestBids.get(result.symbol)?.add(bestBid);
+        }
+      });
+    }
+
+    // Over 30 seconds (600 ticks), every symbol must visit multiple distinct price levels
+    for (const symbol of DEFAULT_SYMBOLS) {
+      const distinctBids = seenBestBids.get(symbol)?.size ?? 0;
+      expect(distinctBids, `${symbol} should traverse multiple price levels`).toBeGreaterThan(1);
+    }
+  });
+
+  it('executes multi-level liquidation cascade sweeps across consecutive price levels', () => {
+    const base = SYMBOL_CONFIG_BY_SYMBOL.get('ETH-USD');
+    expect(base).toBeDefined();
+    if (base === undefined) return;
+    const simulator = new MarketSimulator(base, new Prng(42n));
+    const book = new OrderBook(base.symbol, 25);
+    simulator.seedBook(book);
+    let nextTradeId = 1n;
+
+    let multiLevelSweepCount = 0;
+    for (let tick = 0; tick < 1000; tick += 1) {
+      const trades = simulator.tick(book, START_TIME + tick * 50, () => nextTradeId++);
+      const pricesInTick = new Set(trades.map((t) => t.price));
+      if (pricesInTick.size >= 2) {
+        multiLevelSweepCount += 1;
+      }
+    }
+
+    expect(multiLevelSweepCount).toBeGreaterThan(0);
+  });
+});

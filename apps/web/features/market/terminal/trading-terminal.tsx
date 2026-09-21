@@ -17,6 +17,7 @@ import {
   type TerminalRuntimeSnapshot,
 } from '../runtime/terminal-runtime';
 import { useConnectionStore } from '../stores/connection-store';
+import { cn } from '@/lib/utils';
 
 function useRuntimeSnapshot(runtime: TerminalRuntime | null): TerminalRuntimeSnapshot | null {
   const subscribe = useCallback(
@@ -29,10 +30,12 @@ function useRuntimeSnapshot(runtime: TerminalRuntime | null): TerminalRuntimeSna
 
 function LoadingTerminal({ error }: { readonly error?: string }) {
   return (
-    <main className="terminal-loading">
-      <span className="brand-mark">EX</span>
+    <main className="min-h-screen grid place-content-center justify-items-center gap-4 text-muted-foreground text-[10px] tracking-widest font-mono">
+      <span className="size-8 bg-signal text-ink font-display font-black text-sm flex items-center justify-center -skew-x-6">
+        EX
+      </span>
       <p>{error ?? 'ESTABLISHING MARKET REGISTRY'}</p>
-      <i />
+      <i className="w-36 h-px bg-line overflow-hidden relative after:block after:w-2/5 after:h-full after:bg-signal after:animate-[scan_1.2s_ease-in-out_infinite]" />
     </main>
   );
 }
@@ -101,7 +104,10 @@ export function TradingTerminal() {
   const stale = connection === 'STALE' || connection === 'RECONNECTING' || connection === 'ERROR';
 
   return (
-    <main className={`terminal-shell ${stale ? 'terminal-stale' : ''}`}>
+    <main className="relative h-screen max-h-screen w-full flex flex-col overflow-hidden p-2 bg-ink text-paper font-mono select-none">
+      {/* Top neon glow bar */}
+      <div className="fixed inset-x-0 top-0 h-0.5 z-20 bg-signal shadow-[0_0_24px_rgba(185,255,66,0.5)] pointer-events-none" />
+
       <TerminalHeader
         connection={connection}
         effectiveTier={effectiveTier}
@@ -115,41 +121,50 @@ export function TradingTerminal() {
       ) : null}
       <Watchlist markets={markets} onSelect={selectMarket} selectedSymbol={selectedSymbol} />
 
-      <div className="terminal-grid">
-        <ChartPanel
-          hover={hover}
-          interval={snapshot?.interval ?? DEFAULT_CHART_INTERVAL}
-          market={selectedMarket}
-          onContainer={mountChart}
-          onIntervalChange={selectInterval}
-          waiting={snapshot?.waitingForCandles ?? true}
-        />
-        <OrderBookPanel
-          asks={snapshot?.asks ?? []}
-          bids={snapshot?.bids ?? []}
-          market={selectedMarket}
-          status={snapshot?.bookStatus ?? 'IDLE'}
-        />
-        <DebugDrawer
-          autoTier={autoTier}
-          candleActualHz={snapshot?.candleActualHz ?? 0}
-          candleTargetMs={candlesUpdateMs}
-          connection={connection}
-          connectionId={connectionId}
-          effectiveTier={effectiveTier}
-          jitterMs={jitterMs}
-          lastBookSequence={snapshot?.lastBookSequence ?? null}
-          lastTradeId={snapshot?.lastTradeId ?? null}
-          onOverride={setOverride}
-          override={tierOverride}
-          rttMs={rttMs}
-          symbol={selectedSymbol}
-          tradeActualHz={snapshot?.tradeActualHz ?? 0}
-          tradeTargetMs={tradesBatchMs}
-        />
-        <RecentTrades market={selectedMarket} trades={snapshot?.recentTrades ?? []} />
+      <div
+        className={cn(
+          'flex-1 min-h-0 w-full flex flex-col md:grid md:grid-cols-2 xl:flex xl:flex-row gap-1.5 overflow-y-auto md:overflow-hidden transition-[filter]',
+          stale && 'saturate-[0.55]',
+        )}
+      >
+        <div className="contents xl:flex xl:flex-col xl:flex-1 xl:min-w-0 xl:min-h-0 xl:gap-1.5">
+          <ChartPanel
+            hover={hover}
+            interval={snapshot?.interval ?? DEFAULT_CHART_INTERVAL}
+            market={selectedMarket}
+            onContainer={mountChart}
+            onIntervalChange={selectInterval}
+            waiting={snapshot?.waitingForCandles ?? true}
+          />
+          <DebugDrawer
+            autoTier={autoTier}
+            candleActualHz={snapshot?.candleActualHz ?? 0}
+            candleTargetMs={candlesUpdateMs}
+            connection={connection}
+            connectionId={connectionId}
+            effectiveTier={effectiveTier}
+            jitterMs={jitterMs}
+            lastBookSequence={snapshot?.lastBookSequence ?? null}
+            lastTradeId={snapshot?.lastTradeId ?? null}
+            onOverride={setOverride}
+            override={tierOverride}
+            rttMs={rttMs}
+            symbol={selectedSymbol}
+            tradeActualHz={snapshot?.tradeActualHz ?? 0}
+            tradeTargetMs={tradesBatchMs}
+          />
+        </div>
+        <div className="contents xl:flex xl:flex-col xl:w-[380px] xl:shrink-0 xl:min-h-0 xl:gap-1.5">
+          <OrderBookPanel
+            asks={snapshot?.asks ?? []}
+            bids={snapshot?.bids ?? []}
+            market={selectedMarket}
+            status={snapshot?.bookStatus ?? 'IDLE'}
+          />
+          <RecentTrades market={selectedMarket} trades={snapshot?.recentTrades ?? []} />
+        </div>
       </div>
-      <footer className="terminal-footer">
+      <footer className="shrink-0 h-6 px-3 hidden md:flex items-center justify-between border border-line bg-surface/95 text-[8.5px] text-muted-foreground tracking-wider mt-1">
         <span>CANONICAL ENGINE / SEED 1337</span>
         <span>ORDERING BY IDENTIFIER — NEVER TIMESTAMP</span>
         <span>LOGICAL CLOCK / 50MS</span>

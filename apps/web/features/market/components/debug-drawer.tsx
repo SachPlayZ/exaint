@@ -3,6 +3,7 @@
 import type { Tier } from '@repo/protocol';
 import type { ConnectionState } from '../socket/types';
 import { formatRate } from './format';
+import { cn } from '@/lib/utils';
 
 const OVERRIDES: readonly { readonly label: string; readonly value: Tier | null }[] = [
   { label: 'Auto', value: null },
@@ -31,89 +32,106 @@ export interface DebugDrawerProps {
 
 export function DebugDrawer(props: DebugDrawerProps) {
   return (
-    <details className="debug-drawer panel">
-      <summary>
-        <span>
-          <span className="eyebrow">SYSTEM / INSPECTOR</span>
-          <strong>NETWORK &amp; DELIVERY</strong>
-        </span>
-        <span className="debug-summary-rate">
+    <details className="debug-drawer md:col-span-2 shrink-0 flex flex-col bg-surface/95 border border-line overflow-hidden group">
+      <summary className="shrink-0 h-10 px-3 flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.02] list-none transition-colors">
+        <div>
+          <span className="text-[8px] text-muted-foreground tracking-widest uppercase block">
+            SYSTEM / INSPECTOR
+          </span>
+          <strong className="font-display font-extrabold text-xs text-paper tracking-wide block leading-none mt-0.5">
+            NETWORK &amp; DELIVERY
+          </strong>
+        </div>
+        <span className="text-[9px] font-mono text-signal">
           {formatRate(props.candleActualHz)} / {formatRate(props.tradeActualHz)} HZ
         </span>
       </summary>
-      <div className="debug-grid">
-        <div className="debug-section">
-          <h3>CONNECTION</h3>
-          <dl>
-            <div>
-              <dt>Status</dt>
-              <dd>{props.connection}</dd>
+      <div className="border-t border-line grid grid-cols-1 md:grid-cols-3 text-[8.5px] font-mono">
+        <div className="p-2.5 md:border-r border-line">
+          <h3 className="text-[8px] text-muted-foreground tracking-widest uppercase mb-1.5 font-bold">
+            CONNECTION
+          </h3>
+          <dl className="space-y-1">
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd className="text-paper">{props.connection}</dd>
             </div>
-            <div>
-              <dt>Connection</dt>
-              <dd>{props.connectionId?.slice(0, 8) ?? '—'}</dd>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Connection</dt>
+              <dd className="text-paper">{props.connectionId?.slice(0, 8) ?? '—'}</dd>
             </div>
-            <div>
-              <dt>Symbol</dt>
-              <dd>{props.symbol ?? '—'}</dd>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Symbol</dt>
+              <dd className="text-paper">{props.symbol ?? '—'}</dd>
             </div>
-            <div>
-              <dt>Book seq</dt>
-              <dd>{props.lastBookSequence ?? '—'}</dd>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Book seq</dt>
+              <dd className="text-paper">{props.lastBookSequence ?? '—'}</dd>
             </div>
-            <div>
-              <dt>Trade id</dt>
-              <dd>{props.lastTradeId ?? '—'}</dd>
-            </div>
-          </dl>
-        </div>
-        <div className="debug-section">
-          <h3>NETWORK</h3>
-          <dl>
-            <div>
-              <dt>RTT</dt>
-              <dd>{Math.round(props.rttMs)} ms</dd>
-            </div>
-            <div>
-              <dt>Jitter</dt>
-              <dd>{Math.round(props.jitterMs)} ms</dd>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Trade id</dt>
+              <dd className="text-paper">{props.lastTradeId ?? '—'}</dd>
             </div>
           </dl>
         </div>
-        <div className="debug-section debug-adaptive">
-          <h3>ADAPTIVE DELIVERY</h3>
-          <dl>
-            <div>
-              <dt>Auto tier</dt>
-              <dd>{props.autoTier.toUpperCase()}</dd>
+        <div className="p-2.5 md:border-r border-line border-t md:border-t-0">
+          <h3 className="text-[8px] text-muted-foreground tracking-widest uppercase mb-1.5 font-bold">
+            NETWORK
+          </h3>
+          <dl className="space-y-1">
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">RTT</dt>
+              <dd className="text-paper">{Math.round(props.rttMs)} ms</dd>
             </div>
-            <div>
-              <dt>Override</dt>
-              <dd>{props.override?.toUpperCase() ?? 'OFF'}</dd>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Jitter</dt>
+              <dd className="text-paper">{Math.round(props.jitterMs)} ms</dd>
             </div>
-            <div>
-              <dt>Effective</dt>
-              <dd>{props.effectiveTier.toUpperCase()}</dd>
+          </dl>
+        </div>
+        <div className="p-2.5 border-t md:border-t-0">
+          <h3 className="text-[8px] text-muted-foreground tracking-widest uppercase mb-1.5 font-bold">
+            ADAPTIVE DELIVERY
+          </h3>
+          <dl className="space-y-1">
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Auto tier</dt>
+              <dd className="text-signal font-semibold">{props.autoTier.toUpperCase()}</dd>
             </div>
-            <div>
-              <dt>Candles</dt>
-              <dd>
-                {formatRate(1_000 / props.candleTargetMs)} target /{' '}
-                {formatRate(props.candleActualHz)} actual Hz
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Override</dt>
+              <dd className="text-paper">{props.override?.toUpperCase() ?? 'OFF'}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Effective</dt>
+              <dd className="text-signal font-semibold">{props.effectiveTier.toUpperCase()}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Candles</dt>
+              <dd className="text-paper">
+                {formatRate(1_000 / props.candleTargetMs)} tgt / {formatRate(props.candleActualHz)}{' '}
+                Hz
               </dd>
             </div>
-            <div>
-              <dt>Trades</dt>
-              <dd>
-                {formatRate(1_000 / props.tradeTargetMs)} target / {formatRate(props.tradeActualHz)}{' '}
-                actual Hz
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Trades</dt>
+              <dd className="text-paper">
+                {formatRate(1_000 / props.tradeTargetMs)} tgt / {formatRate(props.tradeActualHz)} Hz
               </dd>
             </div>
           </dl>
-          <div className="override-controls" aria-label="Delivery tier override">
+          <div
+            className="mt-2 flex border border-line rounded overflow-hidden"
+            aria-label="Delivery tier override"
+          >
             {OVERRIDES.map((item) => (
               <button
-                className={props.override === item.value ? 'active' : ''}
+                className={cn(
+                  'flex-1 h-5.5 px-1.5 text-[8px] font-mono border-r border-line last:border-r-0 transition-colors cursor-pointer',
+                  props.override === item.value
+                    ? 'active bg-signal text-ink font-bold'
+                    : 'text-muted-foreground hover:text-paper hover:bg-white/[0.03]',
+                )}
                 key={item.label}
                 onClick={() => props.onOverride(item.value)}
                 type="button"
