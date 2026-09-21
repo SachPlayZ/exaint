@@ -29,10 +29,12 @@ api_domain_from() { sed -n 's/^API_DOMAIN=//p' "$1" | tail -n 1; }
 compose() {
   local directory="$1" image="$2"
   shift 2
+  local env_args=()
+  [[ -f "$api_env" ]] && env_args=(--env-file "$api_env")
   API_IMAGE="$image" docker compose \
     --project-name exaint \
     --file "${directory}/compose.yml" \
-    --env-file "$api_env" "$@"
+    "${env_args[@]}" "$@"
 }
 
 wait_for_api() {
