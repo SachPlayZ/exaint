@@ -18,6 +18,7 @@ export async function buildServer(
   gateway: GatewayOptions = {},
 ): Promise<FastifyInstance> {
   const server = Fastify({
+    trustProxy: context.http.trustProxy,
     logger: {
       // Structured JSON lines — docs/06-ops-deploy.md §5.
       level: process.env.LOG_LEVEL ?? 'info',

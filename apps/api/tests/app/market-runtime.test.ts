@@ -93,6 +93,9 @@ describe('configuration', () => {
     ).toEqual(['https://a.example', 'https://b.example']);
     expect(loadHttpConfig({}).enableDebugControls).toBe(false);
     expect(loadHttpConfig({ ENABLE_DEBUG_CONTROLS: 'true' }).enableDebugControls).toBe(true);
+    expect(loadHttpConfig({}).trustProxy).toBe(false);
+    expect(loadHttpConfig({ TRUST_PROXY: 'true' }).trustProxy).toBe(true);
+    expect(() => loadHttpConfig({ TRUST_PROXY: 'yes' })).toThrow(/TRUST_PROXY/);
     expect(() => loadHttpConfig({ ALLOWED_ORIGINS: ' , ' })).toThrow(/ALLOWED_ORIGINS/);
   });
 });

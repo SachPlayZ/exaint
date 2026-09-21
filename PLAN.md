@@ -66,7 +66,7 @@ The UI must still look excellent. It just must not eat the budget.
 | Property tests | fast-check |
 | E2E | Playwright |
 | Frontend deploy | Vercel |
-| Backend deploy | Fly.io (Render / Railway equivalent) — persistent container |
+| Backend deploy | Amazon EC2 — single persistent Docker host behind Caddy |
 | CI | GitHub Actions |
 
 As of 2026-09-20: Next.js 16.3.3 is the Active LTS security-patched branch; Node 24 is an LTS
@@ -408,8 +408,8 @@ symbol switches.
 - Playwright recovery suite: block selected WS messages, emulate offline, assert the
   `LIVE → RESYNCING → LIVE` and `LIVE → STALE → RECONNECTING → LIVE` paths
 - Multi-stage Dockerfile: Node 24 LTS, non-root user, healthcheck, production deps only
-- Backend on Fly.io, frontend on Vercel, HTTPS + WSS, `AUTH_MODE=ticket` with a real
-  `AUTH_TICKET_SECRET` from the platform secret store
+- Backend on Amazon EC2 through ECR + SSM, frontend on Vercel, HTTPS + WSS,
+  `AUTH_MODE=ticket` with a real `AUTH_TICKET_SECRET` from Parameter Store
 - Structured logs + metrics counters ([`06-ops-deploy.md`](./docs/06-ops-deploy.md#5-observability))
 - README filled out, diagrams inline, including **Packages used** (every dependency justified),
   **Router choice**, **Bonus features**, and **Known limitations**
@@ -456,7 +456,7 @@ values do not. At step 4, point out that each symbol has its own sequence and it
 | Event-loop stall shifts the market sequence | Breaks determinism, breaks tests | Logical clock owns time; scheduler only asks how many ticks are owed ([02](./docs/02-market-domain.md#4-logical-market-clock)) |
 | `bigint` leaks into `JSON.stringify` | Runtime `TypeError` in production | Decimal strings at the boundary; serializer test over every message type |
 | Chart adapter leaks on unmount / interval switch | Memory growth, ghost series | Explicit dispose; adapter owns every handle; leak test in P9 |
-| Vercel ↔ Fly CORS / WSS misconfiguration | Works locally, dead in production | `ALLOWED_ORIGINS` env, smoke test against deployed URLs in CI |
+| Vercel ↔ EC2 CORS / WSS misconfiguration | Works locally, dead in production | `ALLOWED_ORIGINS`, Caddy TLS, public readiness smoke test in CI |
 | Background-tab suspension drops messages silently | Book diverges without a gap signal | Hard refresh after long hide ([04](./docs/04-frontend.md#12-browser-visibility)) |
 | UI polish crowds out correctness work | The graded part is weakest | Effort budget above is a constraint, not a suggestion |
 | Two backend replicas generate different markets | Clients disagree | Single authoritative instance; scaling path documented only ([adr/0004](./docs/adr/0004-no-redis-nats.md)) |

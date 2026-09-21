@@ -255,6 +255,32 @@ describe('rate limiting', () => {
     }
     await limited.close();
   });
+
+  it('keeps proxy-forwarded client IP budgets independent', async () => {
+    const proxied = await createTestApp({ trustProxy: true });
+    const firstClient = { 'x-forwarded-for': '203.0.113.10' };
+    let firstStatus = 200;
+
+    for (let request = 0; request < 121; request += 1) {
+      firstStatus = (
+        await proxied.server.inject({ method: 'GET', url: '/v1/markets', headers: firstClient })
+      ).statusCode;
+      if (firstStatus === 429) break;
+    }
+
+    expect(firstStatus).toBe(429);
+    expect(
+      (
+        await proxied.server.inject({
+          method: 'GET',
+          url: '/v1/markets',
+          headers: { 'x-forwarded-for': '203.0.113.11' },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    await proxied.close();
+  });
 });
 
 describe('GET /metrics', () => {

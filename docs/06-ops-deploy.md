@@ -30,7 +30,7 @@ Frontend:
 Vercel
 
 Backend:
-Fly.io          (Render / Railway equivalent)
+Amazon EC2      (one persistent Docker host)
 ```
 
 **Do not deploy the backend to a short-lived serverless handler.** This backend needs:
@@ -70,6 +70,7 @@ MARKET_SYMBOLS=BTC-USD,ETH-USD,SOL-USD,HYPE-USD,ZEC-USD
 MARKET_SEED=1337
 
 ALLOWED_ORIGINS=http://localhost:3000
+TRUST_PROXY=false
 
 AUTH_MODE=off
 AUTH_TICKET_SECRET=dev-only-not-a-real-secret
@@ -103,6 +104,7 @@ Additional backend knobs introduced during the build (record defaults here as th
 | `MAX_SUBSCRIPTIONS_PER_CONN` | `5` | One per symbol |
 | `MAX_FRAME_BYTES` | `8192` | Inbound frame cap |
 | `HOST` | `0.0.0.0` | Listen address; `0.0.0.0` so container port mapping works |
+| `TRUST_PROXY` | `false` | Trust proxy-forwarded client IPs; `true` only when the API is private behind Caddy |
 | `LOG_LEVEL` | `info` | Pino level for the structured JSON log lines in §5 |
 
 Per-tier delivery cadences (`100/200`, `500/500`, `2000/2000` ms) are constants, not env vars —
@@ -119,7 +121,7 @@ in the README — a reviewer will want to press the buttons.
 
 ---
 
-## 4. Docker
+## 4. Docker and EC2
 
 Multi-stage build:
 
@@ -131,8 +133,67 @@ multi-stage build
 production dependencies only
 ```
 
-Healthcheck hits `/healthz`. `docker-compose.yml` runs api + web locally for anyone who does not
+The production healthcheck hits `/readyz`, so Caddy is not exposed until all five market engines
+have produced their first tick. `docker-compose.yml` runs api + web locally for anyone who does not
 want pnpm on their machine.
+
+Production runs [`deploy/ec2/compose.yml`](../deploy/ec2/compose.yml): the API container is private
+to the Compose network and Caddy exposes ports `80` and `443`, obtains the TLS certificate, and
+proxies both HTTPS and WebSocket upgrades. Keep exactly one EC2 backend instance; the market engine
+is authoritative and in-memory.
+
+### First-time EC2 setup
+
+Use an Ubuntu LTS **x86_64/amd64** instance with an Elastic IP (the CI image is currently built for
+the GitHub runner's amd64 architecture). Point the API hostname's DNS `A` record at that IP.
+The security group allows `80/tcp` and `443/tcp` publicly and no inbound SSH. Install Docker Engine
+with the Compose plugin, AWS CLI, curl, and the SSM Agent. Attach an instance role with:
+
+- `AmazonSSMManagedInstanceCore` permissions;
+- ECR pull access restricted to the `exaint-api` repository (`ecr:GetAuthorizationToken` uses
+  `Resource: "*"`; image/layer actions stay repository-scoped);
+- `ssm:GetParameter` for `/exaint/production/api-env`;
+- `kms:Decrypt` for that SecureString's KMS key.
+
+Create the ECR repository, then store one SecureString parameter at
+`/exaint/production/api-env`. Its value is the complete runtime environment:
+
+```env
+API_DOMAIN=api.example.com
+PORT=8080
+HOST=0.0.0.0
+MARKET_SYMBOLS=BTC-USD,ETH-USD,SOL-USD,HYPE-USD,ZEC-USD
+MARKET_SEED=1337
+MARKET_BOOK_DEPTH=25
+MARKET_TICK_MS=50
+MARKET_MAX_CATCHUP_TICKS=200
+ALLOWED_ORIGINS=https://terminal.example.com
+TRUST_PROXY=true
+AUTH_MODE=ticket
+AUTH_TICKET_SECRET=<openssl-rand-hex-32>
+AUTH_TICKET_TTL_MS=60000
+RATE_LIMIT_GLOBAL_PER_SEC=20
+RATE_LIMIT_STRIKES=3
+MAX_SUBSCRIPTIONS_PER_CONN=5
+MAX_FRAME_BYTES=8192
+ENABLE_DEBUG_CONTROLS=true
+LOG_LEVEL=info
+```
+
+Generate `AUTH_TICKET_SECRET` with `openssl rand -hex 32`. Never put the parameter value in a GitHub
+secret, workflow command, log, or repository file. The EC2 instance retrieves it directly using its
+instance role and writes `/etc/exaint/api.env` with mode `0600`.
+
+The GitHub `production` environment uses OIDC to assume a narrowly scoped AWS role. Its trust policy
+must restrict `sub` to `repo:SachPlayZ/exaint:environment:production`. Grant that role ECR push,
+`ssm:SendCommand` to the one EC2 instance, and `ssm:GetCommandInvocation`; no access keys are stored.
+
+The deploy workflow pushes an immutable image to ECR, uses SSM Run Command to extract that image's
+versioned deployment bundle, waits for `/readyz`, then verifies the public REST endpoint and a fresh
+ticketed WSS `hello` before committing the release. A failed external check invokes the host rollback;
+the host also restores the previous env, Compose file, Caddyfile, and image. Caddy persists certificates
+in named Docker volumes. A deploy deliberately causes a brief WebSocket reconnect: overlapping two
+market engines would expose divergent in-memory markets.
 
 The image and CI both run Node 24. The repo's `engines.node` is `>=22.12.0` rather than `>=24`
 so a developer on the previous LTS can still run `pnpm dev`; nothing in the codebase depends on
@@ -219,8 +280,13 @@ in all three connections.
 
 Pipelines are specified in [`05-testing.md §CI`](./05-testing.md#ci).
 
-Deploy gating: `main` deploys only after tests, web build, and Docker build all pass. No manual
-deploys from a laptop.
+Deploy gating: `main` deploys only after tests, web build, and E2E pass. Configure these GitHub
+`production` environment variables: `AWS_REGION`, `AWS_ROLE_ARN`, `EC2_INSTANCE_ID`,
+`ECR_REPOSITORY`, `EC2_ENV_PARAMETER`, and `API_ORIGIN`. Configure `VERCEL_TOKEN`, `VERCEL_ORG_ID`,
+and `VERCEL_PROJECT_ID` as environment secrets. Missing configuration fails the deployment instead
+of silently skipping it. The Vercel project Root Directory is `apps/web`; its native Git deployment
+is disabled by `apps/web/vercel.json` so the gated workflow is the only production deploy path. No
+manual application deploys from a laptop.
 
 ---
 

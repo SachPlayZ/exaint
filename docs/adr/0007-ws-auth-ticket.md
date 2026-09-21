@@ -70,7 +70,7 @@ one `ping` every `2s` and one `network.report` every `5s`. A client that trips t
 - **No auth at all** — the original assumption. Fine for localhost, careless for a public URL
   fronting a single stateful process.
 - **A long-lived API key in the query string** — same exposure surface, none of the expiry.
-- **Cookie-based session** — cross-origin (Vercel → Fly) cookies for a WebSocket are more
+- **Cookie-based session** — cross-origin (Vercel → backend) cookies for a WebSocket are more
   configuration and more failure modes than a ticket, for no extra security here.
 - **Full user accounts** — solves a problem this project does not have, and would dominate the
   effort budget.

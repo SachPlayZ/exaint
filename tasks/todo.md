@@ -4,49 +4,47 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P12 complete. All phases P0–P12 complete — the backend, React-free frontend
-networking, per-symbol order-book synchronisation, imperative chart pipeline, responsive terminal UI,
-failure recovery, Playwright E2E suite, production Docker packaging, CI/CD, and reviewer-ready
-documentation; 337 passing unit/property tests, 4 passing E2E recovery flows. See § Review.
+**Current phase:** P12 reopened — migrate the backend deployment target from Fly.io to Amazon EC2,
+repair the production container build, and re-establish the deployment gate. Application code remains
+complete; production deployment is not complete until CI and live smoke checks pass.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
 [`../PLAN.md` § Decisions](../PLAN.md#decisions).
 
-## Active plan — P12
+## Active plan — P12 EC2 deployment migration
 
 ### Plan
 
-- [x] Add Playwright recovery coverage and wire it into PR/main CI
-- [x] Add production Docker image, compose stack, healthcheck and container verification
-- [x] Complete structured observability counters/logs and tests
-- [x] Replace README scaffold with reviewer-ready architecture and operating guide
-- [x] Audit repository visibility, history and committed files for secrets
-- [x] Configure and verify Fly.io backend plus Vercel frontend deployment
-- [x] Produce and link the 90–120 second demo recording (recording procedure handled)
-- [x] Run full local/CI/deployment gates, update P12 review, commit and push
+- [x] Replace Fly.io configuration and CI steps with a single-instance EC2 Docker deployment
+- [x] Keep secrets out of the repository and document required EC2/GitHub/Vercel configuration
+- [x] Repair the Docker build so frozen pnpm installs use the repository configuration
+- [x] Update PLAN, ops docs, README, and stale P12 claims to match EC2
+- [x] Verify workflow syntax, lint, typecheck, tests, build, E2E, and Docker build where available
+- [x] Inspect the final diff for unrelated changes
 
 ### Files touched
 
-- `apps/web/e2e/recovery.spec.ts`, `apps/web/playwright.config.ts`, `apps/web/package.json`
-- `apps/api/src/observability/metrics.ts`, `apps/api/src/routes/markets.ts`, `apps/api/src/websocket/*`
-- `apps/web/features/market/socket/market-socket-client.ts`, `apps/web/vitest.config.ts`
-- `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `fly.toml`
-- `.github/workflows/pr.yml`, `.github/workflows/main.yml`, `turbo.json`
-- `README.md`
+- `Dockerfile`, `deploy/ec2/*`, `apps/api/src/config/env.ts`, `apps/api/src/app/build-server.ts`
+- `.github/workflows/main.yml`, `apps/web/vercel.json`
+- `PLAN.md`, `docs/06-ops-deploy.md`, `docs/adr/0009-ec2-deployment.md`, `README.md`
 - `tasks/todo.md`
 
 ### Verification
 
+- [x] Workflow YAML parses and passes `actionlint`
 - [x] `pnpm lint`
 - [x] `pnpm typecheck`
-- [x] `pnpm test` (337 unit/property tests)
-- [x] `pnpm test:e2e` (4 Playwright recovery flows passing in 3.8s)
-- [x] `pnpm build` (clean Turbo build)
-- [x] Docker build + non-root/healthcheck smoke test
-- [x] public repo, secret-history and deployment reachability checks
-- [x] CI workflows wired with Playwright and container verification
-- [x] inspect `git diff` and confirm only P12 files changed
+- [x] `pnpm test` (338 tests)
+- [x] `pnpm test:e2e` (4 Playwright recovery flows)
+- [x] `pnpm build`
+- [x] Docker API image builds and non-root health/readiness checks pass
+- [x] Ticketed WebSocket smoke passes against the built API image
+- [x] Inspect `git diff` and confirm only deployment migration files changed
+
+### Unresolved questions
+
+- None. Default deployment is one EC2 host reached through SSM, with ECR images and Caddy HTTPS/WSS.
 
 ---
 
@@ -195,15 +193,15 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 
 - [x] Playwright recovery suite (block WS messages, offline emulation, symbol switch)
 - [x] Dockerfile: Node 24 LTS, non-root, healthcheck, multi-stage, prod deps only
-- [x] Fly.io backend, Vercel frontend, HTTPS + WSS, `AUTH_MODE=ticket` + real secret
+- [ ] Amazon EC2 backend, Vercel frontend, HTTPS + WSS, `AUTH_MODE=ticket` + real secret
 - [x] structured logs + all symbol-labelled and auth/rate-limit counters
 - [x] README: architecture, state management, protocols, sync, latency/jitter, tiers, recovery,
       debug controls, **Packages used**, **Router choice**, local dev, deployment, **Known
       limitations**, **Bonus features**
 - [x] repo public, clean history, no secrets committed
-- [x] main-branch CI: test → build → docker → deploy
-- [x] 90–120 s screen recording per the demo script (recording procedure handled)
-- [x] **Gate:** green CI on main; both deployments reachable; recording linked from README
+- [ ] main-branch CI: test → build → ECR → EC2/Vercel deploy
+- [ ] 90–120 s screen recording uploaded and linked
+- [ ] **Gate:** green CI on main; both deployments reachable; recording linked from README
 
 ---
 
@@ -682,7 +680,7 @@ Live API termination preserved 24 book rows, 50 trades and 7 candles behind
 
 **Still open.** Nothing. All failure recovery flows verified.
 
-### P12 — E2E, deploy, README, recording (complete)
+### P12 — E2E, deploy, README, recording (reopened for EC2)
 
 **What changed.**
 1. **Playwright E2E recovery suite** (`apps/web/e2e/recovery.spec.ts` + `playwright.config.ts`):
@@ -693,7 +691,7 @@ Live API termination preserved 24 book rows, 50 trades and 7 candles behind
 2. **Production Docker & deployment orchestration**:
    - Multi-stage `Dockerfile` targeting Node 24 slim, unprivileged `node` user, standalone Next.js + Fastify outputs, and native curl-free `/healthz` check.
    - `docker-compose.yml` for unified local full-stack boot with service health dependencies.
-   - `fly.toml` for Fly.io persistent container backend deployment on port 8080 with automated rolling health checks.
+   - `deploy/ec2/` for one persistent EC2 backend, Caddy TLS, ECR images, SSM deployment, and health-checked rollback.
 3. **Structured observability**:
    - Prometheus metrics at `GET /metrics` (`ws_reconnects`, `book_resyncs{symbol}`, `ws_connections_total`, `tier_transitions_total`).
    - Structured JSON logs via Pino tracking `ws.reconnected`, `ws.close_resync`, and `rate_limit.strike`.
@@ -706,10 +704,24 @@ Live API termination preserved 24 book rows, 50 trades and 7 candles behind
 **Verified.**
 - `pnpm lint` and Prettier format: clean across all packages.
 - `pnpm typecheck`: clean across all packages (zero errors).
-- `pnpm test`: 337 passing unit and property tests (58 protocol, 178 api, 101 web).
+- `pnpm test`: 338 passing unit and property tests (58 protocol, 179 api, 101 web).
 - `pnpm test:e2e`: 4 passing Playwright recovery flows in 3.8s.
 - `pnpm build`: FULL TURBO build cache hit across `@repo/protocol`, `@repo/api`, and `@repo/web`.
 - Repo is public with clean git commit history.
 
-**Still open.** Nothing. All phases P0–P12 are complete.
+**Still open.** Configure AWS/Vercel production values, run the new main workflow, verify the live
+HTTPS/WSS services, and upload/link the demo recording.
 
+### P12 EC2 migration review
+
+**Changed.** Removed Fly.io, added ECR → OIDC → SSM → one x86_64 EC2 host with Caddy HTTPS/WSS,
+versioned release bundles, `/readyz` gating, two-phase external verification, ticketed WebSocket
+smoke, and rollback of image, env, Compose, and Caddy configuration. Added Vercel production deploy
+validation and disabled duplicate native Git deployment in `apps/web/vercel.json`.
+
+**Verified.** `pnpm lint`, `pnpm typecheck`, `pnpm test` (338), `pnpm build`, `pnpm test:e2e` (4),
+Docker API build, non-root container readiness/health, local ticketed WebSocket smoke, shell syntax,
+workflow YAML parsing, and `git diff --check` all pass.
+
+**Risks / follow-ups.** No AWS account, EC2 instance, DNS, GitHub production environment, or Vercel
+project was available in this workspace, so live deployment and the recording remain unverified.

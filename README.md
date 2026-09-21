@@ -237,7 +237,7 @@ The terminal includes defense and automated recovery against all real-world edge
 ## Bonus Features
 
 - **Watchlist Reordering (Drag & Drop + Keyboard):** Users can reorder watchlist symbols using intuitive drag-and-drop or accessible keyboard controls (`Space` to grab, `Arrow Up/Down` to move, `Enter` to drop). Custom ordering is persisted in browser `localStorage` and automatically reconciles with dynamic market registry changes. Reordering never interrupts the active chart or switches symbols.
-- **Production-Style Multi-Stage Deployment:** Modular Docker packaging (`Dockerfile` with Node 24 slim, unprivileged `node` user, and curl-free native health check) and automated CI/CD pipelines deploying frontend and backend independently with production secrets.
+- **Production-Style Multi-Stage Deployment:** Modular Docker packaging (`Dockerfile` with Node 24 slim, unprivileged `node` user, and curl-free native health check) and automated CI/CD to a single Amazon EC2 backend plus Vercel frontend.
 
 ---
 
@@ -308,13 +308,21 @@ docker compose up --build
 
 ## Deployment Architecture
 
-The terminal is architected for independent, zero-downtime deployment:
+The terminal is architected for independently deployed frontend and backend services:
 
-- **Backend (Fly.io):** Deployed as a single container running the Fastify WebSocket gateway on port 8080 (`fly.toml`). Authenticates connections via `AUTH_TICKET_SECRET` with CORS locked to the frontend domain.
+- **Backend (Amazon EC2):** Deployed as one authoritative API container through [`deploy/ec2/compose.yml`](./deploy/ec2/compose.yml). Caddy terminates HTTPS/WSS and proxies to Fastify on the private Compose network. Runtime secrets come from AWS Systems Manager Parameter Store through the EC2 instance role.
 - **Frontend (Vercel):** Deployed as a static/edge-rendered Next.js application connecting to the backend via `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - **Continuous Integration (GitHub Actions):**
   - `.github/workflows/pr.yml`: Executes lint, typecheck, unit tests, Playwright E2E recovery flows, and production builds on every pull request.
-  - `.github/workflows/main.yml`: Full deployment pipeline triggering Docker container verification and deployment gates upon merge to `main`.
+  - `.github/workflows/main.yml`: Uses GitHub OIDC to push an immutable API image to ECR, deploys it through SSM Run Command with health-checked rollback, then deploys the Vercel frontend. EC2 exposes no SSH port.
+
+EC2 deployment requires an Elastic IP and API DNS record, an ECR repository, an SSM-managed EC2
+instance role, and one Parameter Store SecureString containing the API runtime environment. Configure
+the GitHub `production` environment variables `AWS_REGION`, `AWS_ROLE_ARN`, `EC2_INSTANCE_ID`,
+`ECR_REPOSITORY`, `EC2_ENV_PARAMETER`, and `API_ORIGIN`; keep the three Vercel credentials as GitHub
+environment secrets. Set the Vercel project Root Directory to `apps/web`; native Git deployment is
+disabled so production remains gated by the main workflow. Full provisioning and IAM requirements are in
+[`docs/06-ops-deploy.md`](./docs/06-ops-deploy.md#4-docker-and-ec2).
 
 ---
 

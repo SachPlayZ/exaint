@@ -31,6 +31,7 @@ export interface AuthConfig {
 export interface HttpConfig {
   readonly allowedOrigins: readonly string[];
   readonly enableDebugControls: boolean;
+  readonly trustProxy: boolean;
 }
 
 export interface WebSocketConfig {
@@ -54,6 +55,13 @@ function readInteger(
     );
   }
   return parsed;
+}
+
+function readBoolean(name: string, raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined || raw === '') return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be "true" or "false", received "${raw}"`);
 }
 
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -142,6 +150,7 @@ export function loadHttpConfig(env: NodeJS.ProcessEnv = process.env): HttpConfig
   return {
     allowedOrigins,
     enableDebugControls: (env.ENABLE_DEBUG_CONTROLS ?? 'false') === 'true',
+    trustProxy: readBoolean('TRUST_PROXY', env.TRUST_PROXY, false),
   };
 }
 

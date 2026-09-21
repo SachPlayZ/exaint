@@ -8,6 +8,9 @@ RUN corepack enable
 
 WORKDIR /app
 
+# pnpm lockfile settings must match frozen installs in every inherited stage.
+COPY .npmrc ./
+
 # Dependencies stage
 FROM base AS dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -28,7 +31,7 @@ RUN pnpm --filter @repo/protocol build
 RUN pnpm --filter @repo/api build
 RUN pnpm --filter @repo/web build
 
-# Production backend container (Fly.io / Docker Compose api)
+# Production backend container (EC2 / Docker Compose api)
 FROM base AS api
 WORKDIR /app
 ENV NODE_ENV=production
@@ -43,6 +46,7 @@ RUN pnpm install --prod --frozen-lockfile
 
 COPY --from=builder /app/packages/protocol/dist packages/protocol/dist
 COPY --from=builder /app/apps/api/dist apps/api/dist
+COPY deploy/ec2 /opt/exaint-deploy
 
 USER node
 

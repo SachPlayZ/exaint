@@ -33,6 +33,7 @@ export async function createTestApp(
     readonly ticketTtlMs?: number;
     readonly ticketNow?: () => number;
     readonly enableDebugControls?: boolean;
+    readonly trustProxy?: boolean;
     readonly maxSubscriptions?: number;
     readonly heartbeatTimeoutMs?: number;
     readonly heartbeatCheckMs?: number;
@@ -59,6 +60,7 @@ export async function createTestApp(
     http: {
       allowedOrigins: ['http://localhost:3000'],
       enableDebugControls: options.enableDebugControls ?? true,
+      trustProxy: options.trustProxy ?? false,
     },
     websocket: {
       globalFramesPerSecond: 20,

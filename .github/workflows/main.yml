@@ -44,53 +44,208 @@ jobs:
       - name: Playwright E2E Tests
         run: pnpm test:e2e
 
-  docker:
-    name: build docker image
+  deploy-api:
+    name: build and deploy API (ECR · EC2)
     needs: [verify]
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      EC2_ENV_PARAMETER: ${{ vars.EC2_ENV_PARAMETER }}
+      API_ORIGIN: ${{ vars.API_ORIGIN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(
+            AWS_REGION AWS_ROLE_ARN EC2_INSTANCE_ID ECR_REPOSITORY
+            EC2_ENV_PARAMETER API_ORIGIN
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Actions production variable: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build API image
-        uses: docker/build-push-action@v5
+      - name: Build and push API image
+        id: image
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: api
-          push: false
-          tags: exaint-api:latest
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-  deploy:
-    name: deploy (Fly.io backend · Vercel frontend)
-    needs: [verify, docker]
+      - name: Deploy API through AWS Systems Manager
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          image_uri="${ECR_REGISTRY}/${ECR_REPOSITORY}@${IMAGE_DIGEST}"
+          release_id="${IMAGE_DIGEST#sha256:}"
+          release_dir="/opt/exaint/releases/${release_id}"
+
+          run_ssm() {
+            local remote_command="$1" comment="$2" command_id status
+            local parameters
+            parameters="$(jq -cn --arg command "$(printf 'bash -lc %q' "$remote_command")" '{commands: [$command]}')"
+            command_id="$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" \
+              --document-name AWS-RunShellScript --comment "$comment" --parameters "$parameters" \
+              --query 'Command.CommandId' --output text)"
+            status=""
+            for attempt in {1..60}; do
+              status="$(aws ssm get-command-invocation --command-id "$command_id" \
+                --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+              case "$status" in
+                Success|Cancelled|Failed|TimedOut|Cancelling) break ;;
+              esac
+              sleep 10
+            done
+            if [[ "$status" != Success ]]; then
+              if [[ "$status" != Cancelled && "$status" != Failed && "$status" != TimedOut ]]; then
+                aws ssm cancel-command --command-id "$command_id" --instance-ids "$EC2_INSTANCE_ID" || true
+                for cancel_attempt in {1..12}; do
+                  status="$(aws ssm get-command-invocation --command-id "$command_id" \
+                    --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+                  case "$status" in
+                    Cancelled|Failed|TimedOut) break ;;
+                  esac
+                  sleep 5
+                done
+              fi
+              aws ssm get-command-invocation --command-id "$command_id" \
+                --instance-id "$EC2_INSTANCE_ID" || true
+              return 1
+            fi
+          }
+
+          prepare_payload="$(printf '%s\n' \
+            'set -euo pipefail' \
+            "registry=$(printf '%q' "$ECR_REGISTRY")" \
+            "image_uri=$(printf '%q' "$image_uri")" \
+            "aws_region=$(printf '%q' "$AWS_REGION")" \
+            "env_parameter=$(printf '%q' "$EC2_ENV_PARAMETER")" \
+            'aws ecr get-login-password --region "$aws_region" | docker login --username AWS --password-stdin "$registry" >/dev/null' \
+            'docker pull "$image_uri"' \
+            'bootstrap_container="$(docker create "$image_uri")"' \
+            'trap '\''docker rm -f "$bootstrap_container" >/dev/null 2>&1 || true'\'' EXIT' \
+            "release_dir=$(printf '%q' "$release_dir")" \
+            'install -d -m 0755 "$release_dir"' \
+            'docker cp "$bootstrap_container:/opt/exaint-deploy/." "$release_dir/"' \
+            'docker rm "$bootstrap_container" >/dev/null' \
+            'trap - EXIT' \
+            'chmod 0700 "$release_dir/deploy.sh"' \
+            '"$release_dir/deploy.sh" prepare "$image_uri" "$env_parameter" "$aws_region"')"
+          run_ssm "$prepare_payload" "Prepare exaint API ${GITHUB_SHA}"
+
+      - name: Verify public API readiness
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify public API and ticketed WebSocket
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          release_dir="/opt/exaint/releases/${IMAGE_DIGEST#sha256:}"
+          run_ssm() {
+            local remote_command="$1" comment="$2" command_id status parameters
+            parameters="$(jq -cn --arg command "$(printf 'bash -lc %q' "$remote_command")" '{commands: [$command]}')"
+            command_id="$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" \
+              --document-name AWS-RunShellScript --comment "$comment" --parameters "$parameters" \
+              --query 'Command.CommandId' --output text)"
+            status=""
+            for attempt in {1..60}; do
+              status="$(aws ssm get-command-invocation --command-id "$command_id" \
+                --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+              case "$status" in
+                Success|Cancelled|Failed|TimedOut|Cancelling) break ;;
+              esac
+              sleep 10
+            done
+            if [[ "$status" != Success ]]; then
+              if [[ "$status" != Cancelled && "$status" != Failed && "$status" != TimedOut ]]; then
+                aws ssm cancel-command --command-id "$command_id" --instance-ids "$EC2_INSTANCE_ID" || true
+                for cancel_attempt in {1..12}; do
+                  status="$(aws ssm get-command-invocation --command-id "$command_id" \
+                    --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+                  case "$status" in
+                    Cancelled|Failed|TimedOut) break ;;
+                  esac
+                  sleep 5
+                done
+              fi
+              aws ssm get-command-invocation --command-id "$command_id" \
+                --instance-id "$EC2_INSTANCE_ID" || true
+              return 1
+            fi
+          }
+          if ! curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "${API_ORIGIN}/readyz" || \
+            ! node deploy/ec2/smoke-ws.mjs "${API_ORIGIN}"; then
+            rollback_payload="$(printf 'set -euo pipefail; %q rollback' "$release_dir/deploy.sh")"
+            run_ssm "$rollback_payload" "Rollback exaint API ${GITHUB_SHA}" || true
+            exit 1
+          fi
+          commit_payload="$(printf 'set -euo pipefail; %q commit' "$release_dir/deploy.sh")"
+          run_ssm "$commit_payload" "Commit exaint API ${GITHUB_SHA}"
+
+  deploy-web:
+    name: deploy web (Vercel)
+    needs: [verify, deploy-api]
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Flyctl
-        if: env.FLY_API_TOKEN != ''
-        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Validate Vercel configuration
+        shell: bash
+        run: |
+          required=(VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Actions secret: ${name}" >&2
+              exit 1
+            fi
+          done
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-      - name: Deploy Backend to Fly.io
-        if: env.FLY_API_TOKEN != ''
-        run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Deploy Frontend to Vercel
-        if: env.VERCEL_TOKEN != ''
-        uses: amondnet/vercel-action@v25
+        uses: amondnet/vercel-action@v42.3.0
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./apps/web
           vercel-args: '--prod'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
