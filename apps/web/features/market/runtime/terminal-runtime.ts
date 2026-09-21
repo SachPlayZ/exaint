@@ -19,6 +19,8 @@ const browserFrames: AnimationFrameScheduler = {
   cancel: (handle) => cancelAnimationFrame(handle),
 };
 
+export const DEFAULT_CHART_INTERVAL: Interval = '5s';
+
 export interface TerminalRuntimeSnapshot extends MarketUiSnapshot {
   readonly market: MarketSummary;
   readonly interval: Interval;
@@ -53,7 +55,7 @@ export class TerminalRuntime {
   readonly #rateTimer: number;
 
   #market: MarketSummary;
-  #interval: Interval = '1s';
+  #interval: Interval = DEFAULT_CHART_INTERVAL;
   #snapshot: TerminalRuntimeSnapshot;
   #hasCandle = false;
   #helloReceived = false;

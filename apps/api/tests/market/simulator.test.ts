@@ -2,7 +2,15 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import type { MarketSymbol } from '@repo/protocol';
 import { MarketEngine } from '../../src/market/market-engine.js';
-import { DEFAULT_SYMBOLS, SYMBOL_CONFIG_BY_SYMBOL } from '../../src/market/symbol-config.js';
+import { OrderBook } from '../../src/market/orderbook/order-book.js';
+import { MarketSimulator } from '../../src/market/simulator/generator.js';
+import { Prng } from '../../src/market/simulator/prng.js';
+import {
+  DEFAULT_SYMBOLS,
+  ORDER_FLOW_PERSISTENCE,
+  SYMBOL_CONFIG_BY_SYMBOL,
+  type SymbolConfig,
+} from '../../src/market/symbol-config.js';
 import { SymbolRegistry } from '../../src/market/symbol-registry.js';
 
 const START_TIME = 1_700_000_000_000;
@@ -19,6 +27,34 @@ function buildEngine(
 }
 
 describe('trade and book coherence (docs/02-market-domain.md §6)', () => {
+  it('clusters noise-trade direction instead of flipping independently each tick', () => {
+    const base = SYMBOL_CONFIG_BY_SYMBOL.get('BTC-USD');
+    expect(base).toBeDefined();
+    if (base === undefined) return;
+    const config: SymbolConfig = {
+      ...base,
+      volatility: 0n,
+      tradeProbability: 1,
+      churnEvents: 0,
+    };
+    const simulator = new MarketSimulator(config, new Prng(1337n));
+    const book = new OrderBook(config.symbol, 25);
+    simulator.seedBook(book);
+    let nextTradeId = 1n;
+    const sides: ('buy' | 'sell')[] = [];
+
+    for (let tick = 0; tick < 1_000; tick += 1) {
+      const trades = simulator.tick(book, START_TIME + tick * 50, () => nextTradeId++);
+      const side = trades[0]?.side;
+      expect(side).toBeDefined();
+      if (side !== undefined) sides.push(side);
+    }
+
+    const continuations = sides.slice(1).filter((side, index) => side === sides[index]).length;
+    expect(continuations / (sides.length - 1)).toBeGreaterThan(0.7);
+    expect(ORDER_FLOW_PERSISTENCE).toBe(0.75);
+  });
+
   it('fills buys from asks and sells from bids, never at a price no level offered', () => {
     const engine = buildEngine(1n);
     for (let tick = 0; tick < 400; tick += 1) {
@@ -216,5 +252,12 @@ describe('five markets, five personalities (docs/02-market-domain.md §2)', () =
     expect(of('HYPE-USD').rangeBps).toBeGreaterThan(of('SOL-USD').rangeBps);
     expect(of('SOL-USD').rangeBps).toBeGreaterThan(of('BTC-USD').rangeBps);
     expect(of('ZEC-USD').rangeBps).toBeGreaterThan(of('ETH-USD').rangeBps);
+  });
+
+  it('keeps the calibrated spread tight and each fair-value step controlled', () => {
+    for (const config of SYMBOL_CONFIG_BY_SYMBOL.values()) {
+      expect(config.spreadSpacings, config.symbol).toBe(1);
+      expect(config.volatility * 4n, config.symbol).toBeLessThanOrEqual(config.levelSpacing);
+    }
   });
 });

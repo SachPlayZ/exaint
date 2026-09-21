@@ -386,6 +386,8 @@ custom DOM candles.
 
 Rules:
 
+- The terminal opens on `5s` for a calmer overview. `1s` remains available for inspecting the
+  highest-resolution trade-derived candles; `1m` remains the long view.
 - `setData()` on history load, symbol switch, and interval switch only. **Never** per trade.
 - `update()` for the active candle.
 - Explicit dispose on unmount, on symbol switch, and on interval switch — leaked series are a real

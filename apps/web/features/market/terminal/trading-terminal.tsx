@@ -11,7 +11,11 @@ import { RecentTrades } from '../components/recent-trades';
 import { StaleBanner } from '../components/stale-banner';
 import { TerminalHeader } from '../components/terminal-header';
 import { Watchlist } from '../components/watchlist';
-import { TerminalRuntime, type TerminalRuntimeSnapshot } from '../runtime/terminal-runtime';
+import {
+  DEFAULT_CHART_INTERVAL,
+  TerminalRuntime,
+  type TerminalRuntimeSnapshot,
+} from '../runtime/terminal-runtime';
 import { useConnectionStore } from '../stores/connection-store';
 
 function useRuntimeSnapshot(runtime: TerminalRuntime | null): TerminalRuntimeSnapshot | null {
@@ -114,7 +118,7 @@ export function TradingTerminal() {
       <div className="terminal-grid">
         <ChartPanel
           hover={hover}
-          interval={snapshot?.interval ?? '1s'}
+          interval={snapshot?.interval ?? DEFAULT_CHART_INTERVAL}
           market={selectedMarket}
           onContainer={mountChart}
           onIntervalChange={selectInterval}

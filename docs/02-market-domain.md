@@ -41,20 +41,23 @@ and owned by `apps/api/src/market/symbol-config.ts`.
 
 | Symbol | Level spacing | Spread | Volatility / tick | Resting size / level |
 | --- | ---: | ---: | ---: | --- |
-| `BTC-USD` | `4.0000` | 1 spacing | `1.5000` | `0.05 – 1.5` |
-| `ETH-USD` | `0.2100` | 1 spacing | `0.0790` | `0.5 – 25` |
-| `SOL-USD` | `0.0210` | 2 spacings | `0.0158` | `5 – 350` |
-| `HYPE-USD` | `0.0080` | 3 spacings | `0.0120` | `25 – 900` |
-| `ZEC-USD` | `0.0400` | 2 spacings | `0.0225` | `3 – 200` |
+| `BTC-USD` | `4.0000` | 1 spacing | `0.3000` | `0.05 – 1.5` |
+| `ETH-USD` | `0.2100` | 1 spacing | `0.0150` | `0.5 – 25` |
+| `SOL-USD` | `0.0210` | 1 spacing | `0.0040` | `5 – 350` |
+| `HYPE-USD` | `0.0080` | 1 spacing | `0.0020` | `25 – 900` |
+| `ZEC-USD` | `0.0400` | 1 spacing | `0.0060` | `3 – 200` |
 
 - **Level spacing** is the gap between two *displayed* levels, always a whole multiple of
   `tickSize`. The ladder is a grid. Twenty-five adjacent ticks on `BTC-USD` would span `2.50` —
   a third of a basis point — so the whole book would be rewritten several times a second and no
   reviewer could read it. Grouping to `4.0000` gives 25 levels spanning ~15 bp, which persists for
   seconds and still moves. Trades still print at any multiple of `tickSize`.
-- **Volatility** is the largest fair-value step per logical tick, and is ~⅛ of the level spacing,
-  so the fair value crosses a grid step every few ticks. The book breathes rather than being
-  rebuilt.
+- **Volatility** is the largest fair-value step per logical tick, capped at ¼ of the level
+  spacing. The fair value advances gradually instead of bouncing through displayed levels every
+  few ticks.
+- **Order flow** uses a deterministic two-state process: after the first noise trade, the next one
+  preserves its side with probability `0.75`; otherwise it flips. Real order flow clusters, and
+  this removes the artificial independent bid/ask alternation without changing OHLC semantics.
 - **Thinness** is the ratio of resting size to trade size. `BTC-USD` and `ETH-USD` absorb a typical
   trade inside one level; `HYPE-USD` does not. That is what "thinnest book" means here.
 
@@ -62,11 +65,11 @@ Measured over one simulated minute from `MARKET_SEED=1337` (asserted in
 `apps/api/tests/market/simulator.test.ts`):
 
 ```text
-BTC-USD    spread 0.59 bp    1-min range  3.0 bp
-ETH-USD    spread 0.59 bp    1-min range  2.4 bp
-SOL-USD    spread 1.95 bp    1-min range 11.7 bp
-ZEC-USD    spread 2.30 bp    1-min range  9.2 bp
-HYPE-USD   spread 6.18 bp    1-min range 26.8 bp
+BTC-USD    spread 0.59 bp    1-min range  0.59 bp
+ETH-USD    spread 0.59 bp    1-min range  0.59 bp
+SOL-USD    spread 0.97 bp    1-min range  1.95 bp
+ZEC-USD    spread 1.15 bp    1-min range  5.75 bp
+HYPE-USD   spread 2.06 bp    1-min range 16.54 bp
 ```
 
 The visible ladder stays **contiguous on the grid**: every adjacent pair of displayed levels is

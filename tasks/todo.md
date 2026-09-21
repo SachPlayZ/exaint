@@ -4,13 +4,163 @@ Phase definitions, DoD, and docs-to-read live in [`../PLAN.md`](../PLAN.md).
 Check items off as they complete. Do not check an item without evidence
 ([`../AGENTS.md §6`](../AGENTS.md#6-definition-of-done-phase-gate)).
 
-**Current phase:** P12 reopened — migrate the backend deployment target from Fly.io to Amazon EC2,
-repair the production container build, and re-establish the deployment gate. Application code remains
-complete; production deployment is not complete until CI and live smoke checks pass.
+**Current phase:** P12 reopened — production CI/deploy is green, but the Vercel app cannot bootstrap
+through the EC2 API because production CORS is misconfigured. The audit below also reopened three
+delivery-state defects, documentation cleanup, and the missing screen recording.
 
 **Settled decisions:** 5 symbols (BTC/ETH/SOL/HYPE/ZEC), WS connect tickets, per-connection rate
 limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refresh. See
 [`../PLAN.md` § Decisions](../PLAN.md#decisions).
+
+## Active documentation — README rewrite
+
+### Plan
+
+- [ ] Review current implementation, architecture docs, assignment, and reference READMEs
+- [ ] Rewrite `README.md` with live URLs, concise architecture, protocols, recovery, and setup
+- [ ] Document accurate adaptive thresholds, debug controls, lifecycle behavior, and limitations
+- [ ] Verify links, formatting, commands, deployed endpoints, and README coverage
+- [ ] Inspect the final diff without disturbing concurrent implementation work
+
+### Files likely touched
+
+- `README.md`, `tasks/todo.md`
+
+### Verification
+
+- [ ] `pnpm exec prettier --check README.md tasks/todo.md`
+- [ ] Link/path and required-section audit
+- [ ] Live frontend/API endpoint smoke
+
+### Unresolved questions
+
+- None.
+
+## Active audit — assignment end-to-end coverage
+
+### Plan
+
+- [x] Map every assignment requirement to implementation, tests, docs, or deliverable evidence
+- [x] Audit backend/protocol correctness and adaptive delivery
+- [x] Audit frontend behavior, synchronization, recovery, responsiveness, and lifecycle
+- [x] Verify lint, typecheck, unit/property tests, E2E, and production builds
+- [x] Smoke-test the running API and browser UI
+- [x] Verify public/deployed deliverables and identify external gaps
+
+### Files likely inspected
+
+- `apps/api/`, `apps/web/`, `packages/protocol/`, `docs/`, `README.md`
+- `.github/workflows/`, deployment configuration, `PLAN.md`, `tasks/todo.md`
+
+### Verification
+
+- [x] Requirement matrix supported by exact file/test/runtime evidence
+- [x] Full repository quality gates
+- [x] Live REST/WebSocket/UI smoke evidence
+
+### Unresolved questions
+
+- None.
+
+### Review
+
+#### Changed
+
+- No application behavior changed; audit evidence only.
+
+#### Verified
+
+- `pnpm lint`, `pnpm typecheck`, `pnpm test` (338 tests), `pnpm test:e2e` (4 tests), and
+  `pnpm build` pass.
+- Local REST, ticketed WebSocket, and browser UI work; production API/WSS and main CI are healthy.
+- Public repository and independently deployed EC2/Vercel services exist.
+
+#### Risks
+
+- Production frontend cannot bootstrap because the API omits CORS permission for its Vercel origin.
+- Missing-report demotion reaches `MINIMAL` at 20 s instead of the documented 30 s.
+- Interval switches can relabel queued old-interval candles; a final candle can also be emitted as active.
+- The required screen recording is missing; README has material protocol/configuration drift.
+- WebSocket request logs include the connect ticket in the URL.
+
+#### Follow-ups
+
+- Fix the production CORS environment and add a browser-origin deployment smoke test.
+- Fix the three delivery-state defects and add focused regressions.
+- Correct README/debug setup/test links, redact ticket query strings, and add the demo recording.
+
+## Active diagnosis — candle visual inconsistency
+
+### Plan
+
+- [x] Trace canonical trades through candle aggregation and chart conversion
+- [x] Inspect real candle output for invalid OHLC values, gaps, and sparse buckets
+- [x] Identify whether the screenshot is expected market shape or a defect
+
+### Files likely inspected
+
+- `apps/api/src/market/{simulator,candles}/`, `apps/web/features/market/chart/`
+- `docs/02-market-domain.md`, `docs/04-frontend.md`, `tasks/todo.md`
+
+### Verification
+
+- [x] Focused candle and chart tests (42 passed)
+- [x] Concrete 120-second deterministic sample across all symbols and intervals
+
+### Unresolved questions
+
+- None.
+
+### Review
+
+#### Changed
+
+- No application behavior changed; diagnosis only.
+
+#### Verified
+
+- Every sampled candle satisfied OHLC bounds; every sampled 1s/5s bucket was contiguous.
+- 1s opens differed from the preceding close in 72–93% of transitions, depending on symbol.
+- 1s doji candles accounted for 8–25% of the sample, explaining the line-like bodies.
+
+#### Risks
+
+- The output is mathematically valid but visually noisy because a bucket opens at its first actual
+  trade, which can jump across the simulated spread from the preceding bucket's final trade.
+
+#### Follow-ups
+
+- Implement the approved simulator calibration and 5s default below.
+
+## Active implementation — smoother trade-derived candles
+
+### Plan
+
+- [ ] Add deterministic order-flow persistence to noise trades
+- [ ] Tighten configured spreads and reduce fair-value volatility
+- [ ] Keep canonical first-trade OHLC semantics unchanged
+- [ ] Change the terminal default interval from 1s to 5s
+- [ ] Update owning docs and add focused regression coverage
+- [ ] Run focused tests, full quality gates, sample output, and diff review
+
+### Files likely touched
+
+- `apps/api/src/market/simulator/generator.ts`, `apps/api/src/market/symbol-config.ts`
+- `apps/api/tests/market/{simulator,registry}.test.ts`
+- `apps/web/features/market/runtime/terminal-runtime.ts`
+- `apps/web/features/market/terminal/trading-terminal.tsx`
+- `docs/02-market-domain.md`, `docs/04-frontend.md`, `tasks/todo.md`
+
+### Verification
+
+- [ ] Determinism, trade/book coherence, candle validity, and visual continuity regression
+- [ ] Terminal initially subscribes and fetches candle history at 5s
+- [ ] `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`
+- [ ] Inspect final diff for unrelated changes
+
+### Unresolved questions
+
+- None.
 
 ## Active plan — P12 EC2 deployment migration
 
@@ -199,7 +349,7 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
       debug controls, **Packages used**, **Router choice**, local dev, deployment, **Known
       limitations**, **Bonus features**
 - [x] repo public, clean history, no secrets committed
-- [ ] main-branch CI: test → build → ECR → EC2/Vercel deploy
+- [x] main-branch CI: test → build → ECR → EC2/Vercel deploy
 - [ ] 90–120 s screen recording uploaded and linked
 - [ ] **Gate:** green CI on main; both deployments reachable; recording linked from README
 

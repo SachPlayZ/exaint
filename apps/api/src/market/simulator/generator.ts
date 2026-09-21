@@ -2,7 +2,7 @@ import type { Side } from '@repo/protocol';
 import type { DomainTrade } from '../events.js';
 import { clampBigInt, floorToTick, maxBigInt, minBigInt } from '../fixed-point.js';
 import type { OrderBook, BookSide } from '../orderbook/order-book.js';
-import type { SymbolConfig } from '../symbol-config.js';
+import { ORDER_FLOW_PERSISTENCE, type SymbolConfig } from '../symbol-config.js';
 import type { Prng } from './prng.js';
 
 /**
@@ -22,6 +22,7 @@ export class MarketSimulator {
   readonly config: SymbolConfig;
   readonly #prng: Prng;
   #fairValue: bigint;
+  #lastNoiseSide: Side | null = null;
   readonly #floor: bigint;
   readonly #ceiling: bigint;
 
@@ -67,7 +68,7 @@ export class MarketSimulator {
 
     // Noise: a trade that is not explained by the fair value moving.
     if (this.#prng.nextFloat() < this.config.tradeProbability) {
-      const side: Side = this.#prng.nextBoolean() ? 'buy' : 'sell';
+      const side = this.#nextNoiseSide();
       const quantity = this.#prng.nextBigIntBetween(
         this.config.minTradeQuantity,
         this.config.maxTradeQuantity,
@@ -94,6 +95,21 @@ export class MarketSimulator {
 
   #randomLevelQuantity(): bigint {
     return this.#prng.nextBigIntBetween(this.config.minLevelQuantity, this.config.maxLevelQuantity);
+  }
+
+  /**
+   * Real order flow clusters. A Markov side process avoids artificial bid/ask
+   * flipping on every tick while staying deterministic for a given seed.
+   */
+  #nextNoiseSide(): Side {
+    if (this.#lastNoiseSide === null) {
+      this.#lastNoiseSide = this.#prng.nextBoolean() ? 'buy' : 'sell';
+      return this.#lastNoiseSide;
+    }
+    if (this.#prng.nextFloat() >= ORDER_FLOW_PERSISTENCE) {
+      this.#lastNoiseSide = this.#lastNoiseSide === 'buy' ? 'sell' : 'buy';
+    }
+    return this.#lastNoiseSide;
   }
 
   /**

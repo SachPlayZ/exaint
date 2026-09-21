@@ -33,6 +33,9 @@ export interface SymbolConfig {
   readonly churnEvents: number;
 }
 
+/** Chance that the next noise trade continues the preceding noise-trade direction. */
+export const ORDER_FLOW_PERSISTENCE = 0.75;
+
 const config = (c: SymbolConfig): SymbolConfig => Object.freeze(c);
 
 /**
@@ -41,9 +44,8 @@ const config = (c: SymbolConfig): SymbolConfig => Object.freeze(c);
  * - `levelSpacing` is chosen so 25 levels per side span 15–50 bp of price — deep
  *   enough that the ladder persists for seconds, tight enough to look like a
  *   market.
- * - `volatility` is ~⅛ of `levelSpacing`, so the fair value crosses a grid step
- *   every few ticks. That produces a book that breathes instead of being
- *   rewritten wholesale every 50 ms.
+ * - `volatility` is ≤¼ of `levelSpacing`, so the fair value advances gradually
+ *   instead of bouncing through displayed levels every few ticks.
  * - Thinness is the ratio of level size to trade size: BTC and ETH absorb a
  *   typical trade inside one level, HYPE does not — which is what "thinnest
  *   book" means here.
@@ -55,7 +57,7 @@ export const SYMBOL_CONFIGS: readonly SymbolConfig[] = Object.freeze([
     tickSize: 1_000n, // 0.1000
     levelSpacing: 40_000n, // 4.0000
     spreadSpacings: 1,
-    volatility: 15_000n, // 1.5000
+    volatility: 3_000n, // 0.3000
     minTradeQuantity: 100_000n, // 0.00100000
     maxTradeQuantity: 100_000_000n, // 1.00000000
     minLevelQuantity: 5_000_000n, // 0.05000000
@@ -69,7 +71,7 @@ export const SYMBOL_CONFIGS: readonly SymbolConfig[] = Object.freeze([
     tickSize: 100n, // 0.0100
     levelSpacing: 2_100n, // 0.2100
     spreadSpacings: 1,
-    volatility: 790n, // 0.0790
+    volatility: 150n, // 0.0150
     minTradeQuantity: 1_000_000n, // 0.01000000
     maxTradeQuantity: 2_000_000_000n, // 20.00000000
     minLevelQuantity: 50_000_000n, // 0.50000000
@@ -82,8 +84,8 @@ export const SYMBOL_CONFIGS: readonly SymbolConfig[] = Object.freeze([
     basePrice: 2_143_900n, // 214.3900
     tickSize: 10n, // 0.0010
     levelSpacing: 210n, // 0.0210
-    spreadSpacings: 2,
-    volatility: 158n, // 0.0158
+    spreadSpacings: 1,
+    volatility: 40n, // 0.0040
     minTradeQuantity: 10_000_000n, // 0.10000000
     maxTradeQuantity: 50_000_000_000n, // 500.00000000
     minLevelQuantity: 500_000_000n, // 5.00000000
@@ -96,8 +98,8 @@ export const SYMBOL_CONFIGS: readonly SymbolConfig[] = Object.freeze([
     basePrice: 387_200n, // 38.7200
     tickSize: 10n, // 0.0010
     levelSpacing: 80n, // 0.0080
-    spreadSpacings: 3,
-    volatility: 120n, // 0.0120
+    spreadSpacings: 1,
+    volatility: 20n, // 0.0020
     minTradeQuantity: 100_000_000n, // 1.00000000
     maxTradeQuantity: 200_000_000_000n, // 2000.00000000
     minLevelQuantity: 2_500_000_000n, // 25.00000000
@@ -110,8 +112,8 @@ export const SYMBOL_CONFIGS: readonly SymbolConfig[] = Object.freeze([
     basePrice: 3_475_100n, // 347.5100
     tickSize: 100n, // 0.0100
     levelSpacing: 400n, // 0.0400
-    spreadSpacings: 2,
-    volatility: 225n, // 0.0225
+    spreadSpacings: 1,
+    volatility: 60n, // 0.0060
     minTradeQuantity: 10_000_000n, // 0.10000000
     maxTradeQuantity: 30_000_000_000n, // 300.00000000
     minLevelQuantity: 300_000_000n, // 3.00000000
