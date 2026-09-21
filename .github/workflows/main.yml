@@ -210,8 +210,18 @@ jobs:
               return 1
             fi
           }
-          if ! curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "${API_ORIGIN}/readyz" || \
-            ! node deploy/ec2/smoke-ws.mjs "${API_ORIGIN}"; then
+          ready=false
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "${API_ORIGIN}/readyz" && \
+              node deploy/ec2/smoke-ws.mjs "${API_ORIGIN}"; then
+              ready=true
+              break
+            fi
+            echo "Waiting for public API and WebSocket readiness (attempt ${attempt}/12)..." >&2
+            sleep 5
+          done
+
+          if [[ "$ready" != true ]]; then
             rollback_payload="$(printf 'set -euo pipefail; %q rollback' "$release_dir/deploy.sh")"
             run_ssm "$rollback_payload" "Rollback exaint API ${GITHUB_SHA}" || true
             exit 1
