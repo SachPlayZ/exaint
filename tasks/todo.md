@@ -22,6 +22,11 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [ ] Verify links, formatting, commands, deployed endpoints, and README coverage
 - [ ] Inspect the final diff without disturbing concurrent implementation work
 
+### Presentation correction — 2026-09-22
+
+- [x] Replace the primary ASCII architecture diagram with Mermaid.
+- [x] Remove hiring-signal language from the README.
+
 ### Files likely touched
 
 - `README.md`, `tasks/todo.md`
@@ -33,6 +38,24 @@ limits, book depth 25/side, tier-scaled trade cadence, 30 s hidden-tab hard refr
 - [ ] Live frontend/API endpoint smoke
 
 ### Unresolved questions
+
+- None.
+
+### Review
+
+#### Changed
+
+- Replaced the primary system diagram with Mermaid and renamed the invariants section.
+
+#### Verified
+
+- Mermaid fence and surrounding Markdown pass Prettier.
+
+#### Risks
+
+- None.
+
+#### Follow-ups
 
 - None.
 

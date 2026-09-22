@@ -51,59 +51,36 @@ $$\text{HTTP / WS Transport Layer} \longrightarrow \text{Application Layer} \lon
 
 Domain code (`OrderBook`, `CandleAggregator`, `MarketClock`) has zero dependencies on Fastify or React. Protocol contracts are shared via `@repo/protocol` with runtime Zod validation at every network boundary.
 
-```text
-                   +-------------------------------------------------------------+
-                   |                     Next.js 16 Client                       |
-                   |                                                             |
-                   |   +-----------------------+     +-----------------------+   |
-                   |   | TanStack Query (REST) |     | Lightweight Charts    |   |
-                   |   | History / Snapshot    |     | Imperative Canvas     |   |
-                   |   +-----------+-----------+     +-----------^-----------+   |
-                   |               |                             | (updates)     |
-                   |   +-----------v-----------------------------+-----------+   |
-                   |   |         React-Free Domain Composition Root          |   |
-                   |   |   * MarketSocketClient (EWMA RTT, Auto-Backoff)     |   |
-                   |   |   * Per-Symbol OrderBookSynchronizer (9 Steps)      |   |
-                   |   |   * ChartPipeline (Merge & Generation Guard)        |   |
-                   |   +-----------------------+-----------------------------+   |
-                   |                           | (rAF 60fps snapshot)            |
-                   |               +-----------v-----------+                     |
-                   |               |     Zustand Store     |                     |
-                   |               | UI State & Latency    |                     |
-                   |               +-----------+-----------+                     |
-                   |                           |                                 |
-                   |               +-----------v-----------+                     |
-                   |               |  React Terminal UI    |                     |
-                   |               |  Book, Tape, Headers  |                     |
-                   |               +-----------------------+                     |
-                   +---------------------------^---------------------------------+
-                                               |
-                     HTTPS (REST) / WSS (WebSocket Tickets & Streams)
-                                               |
-                   +---------------------------v---------------------------------+
-                   |                    Fastify 5 API Gateway                    |
-                   |                                                             |
-                   |   +-----------------------+     +-----------------------+   |
-                   |   |   REST Controller     |     |   WebSocket Gateway   |   |
-                   |   | /v1/markets           |     | /v1/ws?ticket=...     |   |
-                   |   | /v1/markets/:s/book   |     | HMAC Authentication   |   |
-                   |   | /v1/markets/:s/candles|     | Token-Bucket Limiter  |   |
-                   |   | /v1/auth/ticket       |     | Tier & Delivery Sched |   |
-                   |   +-----------+-----------+     +-----------+-----------+   |
-                   |               |                             |               |
-                   |   +-----------v-----------------------------v-----------+   |
-                   |   |                     Market Runtime                  |   |
-                   |   |   * One 50ms Logical Market Clock (Catch-up Loop)   |   |
-                   |   |   * 5 Independent Symbol Engines (PRNG + Seed)      |   |
-                   |   |   * 25-Level Order Book with Replenishment          |   |
-                   |   |   * Canonical Candle Aggregators (1s, 5s, 1m)       |   |
-                   |   +-----------------------------------------------------+   |
-                   +-------------------------------------------------------------+
+```mermaid
+flowchart TB
+  subgraph client["Next.js 16 client"]
+    query["TanStack Query<br/>history and snapshots"]
+    runtime["React-free domain composition root<br/>MarketSocketClient · OrderBookSynchronizer · ChartPipeline"]
+    chart["Lightweight Charts<br/>imperative canvas"]
+    store["Zustand<br/>UI state and latency"]
+    terminal["React terminal UI<br/>book · tape · headers"]
+
+    query --> runtime
+    runtime -->|"series updates"| chart
+    runtime -->|"rAF snapshot"| store --> terminal
+  end
+
+  subgraph gateway["Fastify 5 API gateway"]
+    rest["REST controller<br/>markets · book · candles · ticket"]
+    websocket["WebSocket gateway<br/>HMAC auth · rate limit · tier scheduler"]
+    market["Market runtime<br/>50 ms logical clock · 5 symbol engines<br/>25-level books · canonical candles"]
+
+    rest --> market
+    websocket --> market
+  end
+
+  query <-->|"HTTPS REST"| rest
+  runtime <-->|"ticketed WSS streams"| websocket
 ```
 
 ---
 
-## Core Invariants (The Hiring Signal)
+## Core Invariants
 
 The system guarantees three non-negotiable correctness invariants across all operational conditions (network jitter, dropped frames, server restarts, disconnects):
 

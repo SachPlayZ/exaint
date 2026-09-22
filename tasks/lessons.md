@@ -58,3 +58,11 @@ checks without being visually usable.
 **Rule:** For switch/recovery UI, test multiple symbols and assert both domain and connection states;
 inspect the reported viewport visually, not only `scrollWidth`.
 **Applies to:** `apps/web` symbol switching, responsive layout, and E2E coverage.
+
+## 2026-09-22 — Keep README voice product-focused
+
+**What happened:** README described its invariants as a "hiring signal," which made the project sound
+like it was seeking validation rather than explaining the system.
+**Rule:** Write README copy around the product and its guarantees; omit hiring, interview, or reviewer
+framing unless the user explicitly asks for it.
+**Applies to:** `README.md` and public-facing project documentation.
