@@ -189,6 +189,35 @@ describe('subscription semantics', () => {
     expect(intervals.get('SOL-USD')).toEqual(new Set(['1m']));
   });
 
+  it('does not send queued 1s candles as 1m candles after set_interval', async () => {
+    const { app, url } = await bootstrap();
+    const socket = await connect(url, await mintTicket(app));
+    await socket.waitFor('hello');
+
+    socket.send({ type: 'debug.tier_override', tier: 'minimal' });
+    await socket.waitFor('tier.changed');
+    socket.send({ type: 'subscribe', symbol: 'BTC-USD', channels: ['candles'], interval: '1s' });
+    await socket.waitFor('subscribed');
+
+    // The first active update sends immediately. The next 1s bucket closes
+    // before Minimal's 2s send cadence expires, leaving a final candle queued.
+    app.pump(25);
+    await socket.waitFor('candles.update');
+    expect(socket.received('candles.update')).toHaveLength(1);
+    expect(app.registry.get('BTC-USD')?.candles.get('1s')?.history().length).toBeGreaterThan(0);
+
+    socket.send({ type: 'set_interval', symbol: 'BTC-USD', interval: '1m' });
+    expect(await socket.waitFor('subscribed', 2)).toMatchObject({ interval: '1m' });
+    app.pump(40);
+
+    const update = await socket.waitFor('candles.update', 2);
+    expect(update.interval).toBe('1m');
+    expect(update.candles.length).toBeGreaterThan(0);
+    for (const candle of update.candles) {
+      expect(candle.startTime % 60_000).toBe(0);
+    }
+  });
+
   it('stops streaming after unsubscribe', async () => {
     const { app, url } = await bootstrap();
     const socket = await connect(url, await mintTicket(app));

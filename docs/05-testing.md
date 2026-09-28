@@ -64,7 +64,9 @@ missing reports
 - **override removal** (`tier: null`) — connection returns to whatever `automaticTier` currently is,
   with no re-warm-up
 - **missing reports** — the `15s / 30s / 45s` ladder from
-  [`03-adaptive-delivery.md §6`](./03-adaptive-delivery.md#6-missing-reports)
+  [`03-adaptive-delivery.md §6`](./03-adaptive-delivery.md#6-missing-reports); check repeatedly
+  between 15s and 30s to prove there is only one early demotion, then report again and verify
+  the next silence period starts a fresh ladder
 
 Drive it with a fake clock. Never with real timers.
 

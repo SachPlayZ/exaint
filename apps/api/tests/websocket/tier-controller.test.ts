@@ -160,6 +160,40 @@ describe('TierController (T1)', () => {
     expect(session.autoTier).toBe('minimal');
   });
 
+  it('demotes only once between 15 s and 30 s, then resets after a report', () => {
+    const { session, controller } = build();
+    for (let report = 1; report <= 5; report += 1) {
+      controller.applyReport(GOOD.rttMs, GOOD.jitterMs, START + report * 5_000);
+    }
+    expect(session.autoTier).toBe('full');
+    const lastReport = START + 25_000;
+
+    expect(controller.applySilence(lastReport + 15_000)).toMatchObject({
+      changed: true,
+      autoTier: 'degraded',
+      reason: 'missing_reports',
+    });
+    for (const silentMs of [20_000, 25_000, 29_999]) {
+      expect(controller.applySilence(lastReport + silentMs).changed).toBe(false);
+      expect(session.autoTier).toBe('degraded');
+    }
+    expect(controller.applySilence(lastReport + 30_000)).toMatchObject({
+      changed: true,
+      autoTier: 'minimal',
+      reason: 'missing_reports',
+    });
+
+    for (let report = 1; report <= 5; report += 1) {
+      controller.applyReport(GOOD.rttMs, GOOD.jitterMs, lastReport + 30_000 + report * 1_000);
+    }
+    expect(session.autoTier).toBe('degraded');
+    expect(controller.applySilence(lastReport + 50_000)).toMatchObject({
+      changed: true,
+      autoTier: 'minimal',
+      reason: 'missing_reports',
+    });
+  });
+
   it('measures silence from connect time when no report has ever arrived', () => {
     const { session, controller } = build();
     controller.applySilence(START + MISSING_REPORT_MS.forceMinimal);

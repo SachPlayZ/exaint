@@ -90,6 +90,10 @@ Full frame shape: [`01-protocol.md §6`](./01-protocol.md#candlesupdate).
 The active-candle slot **coalesces** — a newer version replaces the older, because only the latest
 matters. The finalised queue **accumulates** — every closed candle is delivered exactly once.
 
+When a subscription changes interval, discard its pending finalised and active candles from the
+old interval before sending data for the new one. A `set_interval` acknowledgement must not relabel
+queued `1s` candles as `1m` data. Other symbols' queues are unaffected.
+
 That asymmetry is the whole trick. It is also an excellent detail to raise unprompted in the
 interview.
 
@@ -268,7 +272,7 @@ Document this explicitly; reviewers ask.
     retain current tier
 
 15 sec:
-    downgrade one tier
+    downgrade one tier once during this silence period
 
 30 sec:
     force MINIMAL
@@ -276,6 +280,9 @@ Document this explicitly; reviewers ask.
 45 sec without successful heartbeat:
     close socket
 ```
+
+Repeated heartbeat checks between 15 and 30 seconds do not demote further. A new
+`network.report` starts a fresh silence period and makes its 15-second demotion available again.
 
 After the close, the frontend's reconnect machinery takes over — backoff, fresh snapshot, fresh
 history ([`04-frontend.md §10`](./04-frontend.md#11-disconnect-and-reconnect)).

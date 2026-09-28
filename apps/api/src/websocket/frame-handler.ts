@@ -126,7 +126,7 @@ function applyFrame(frame: ClientFrame, deps: FrameHandlerDeps): void {
         return;
       }
       // Per symbol: two symbols on one connection may sit on different intervals.
-      subscription.subscribedInterval = frame.interval;
+      subscription.setInterval(frame.interval);
       send({
         type: 'subscribed',
         symbol: frame.symbol,

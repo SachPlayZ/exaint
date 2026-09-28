@@ -50,6 +50,7 @@ export interface TierUpdate {
 
 export class TierController {
   readonly #session: ConnectionSession;
+  #demotedForSilence = false;
 
   constructor(session: ConnectionSession) {
     this.#session = session;
@@ -64,6 +65,7 @@ export class TierController {
     session.rttMs = rttMs;
     session.jitterMs = jitterMs;
     session.lastNetworkReportAt = now;
+    this.#demotedForSilence = false;
 
     const bad = this.#isBad(session.autoTier, rttMs, jitterMs);
     const good = this.#isGood(session.autoTier, rttMs, jitterMs);
@@ -104,8 +106,9 @@ export class TierController {
 
     if (silentMs >= MISSING_REPORT_MS.forceMinimal) {
       session.autoTier = 'minimal';
-    } else if (silentMs >= MISSING_REPORT_MS.demoteOneTier) {
+    } else if (silentMs >= MISSING_REPORT_MS.demoteOneTier && !this.#demotedForSilence) {
       session.autoTier = DEMOTE[session.autoTier] ?? session.autoTier;
+      this.#demotedForSilence = true;
     }
 
     return this.#result(before, 'missing_reports');
